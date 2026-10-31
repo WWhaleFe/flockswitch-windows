@@ -4,7 +4,7 @@ use crate::config::Config;
 use crate::device::Reporting;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 
 /// A device seen at least once, remembered on disk so settings can list it even while
@@ -35,6 +35,8 @@ pub struct Status {
     pub last_switch: Option<String>,
     /// Trigger buttons the master mouse has (control IDs).
     pub buttons: Vec<u16>,
+    /// Channels whose keyboard shortcut could not be registered.
+    pub hotkeys_failed: Vec<u8>,
 }
 
 /// What the engine sees right now, written for the settings window (a separate
@@ -52,6 +54,9 @@ pub struct StatusFile {
     /// Version of the running menu-bar app (empty before 0.3.5).
     #[serde(default)]
     pub version: String,
+    /// Channels whose keyboard shortcut could not be registered.
+    #[serde(default)]
+    pub hotkeys_failed: Vec<u8>,
 }
 
 fn status_path() -> std::path::PathBuf {
@@ -189,6 +194,8 @@ pub struct Shared {
     status: Mutex<Status>,
     last_status_file: Mutex<StatusFile>,
     pub stop: AtomicBool,
+    /// Channel asked for by a keyboard shortcut, for the engine to act on (0 = none).
+    switch_request: AtomicU8,
 }
 
 impl Shared {
@@ -201,6 +208,7 @@ impl Shared {
             status: Mutex::new(Status::default()),
             last_status_file: Mutex::new(StatusFile { online: vec!["-".into()], ..StatusFile::default() }),
             stop: AtomicBool::new(false),
+            switch_request: AtomicU8::new(0),
         }
     }
 
@@ -270,6 +278,7 @@ impl Shared {
             last_switch: st.last_switch.clone(),
             online: st.devices.iter().filter(|d| d.online).map(|d| d.key.clone()).collect(),
             buttons: st.buttons.clone(),
+            hotkeys_failed: st.hotkeys_failed.clone(),
             version: env!("CARGO_PKG_VERSION").into(),
         };
         drop(st);
@@ -279,6 +288,15 @@ impl Shared {
             save_status_file(&file);
             *last = file;
         }
+    }
+
+    /// A keyboard shortcut was pressed: the engine moves everything to `channel`.
+    pub fn request_switch(&self, channel: u8) {
+        self.switch_request.store(channel, Ordering::SeqCst);
+    }
+
+    pub fn take_switch_request(&self) -> Option<u8> {
+        Some(self.switch_request.swap(0, Ordering::SeqCst)).filter(|&c| c > 0)
     }
 
     pub fn stopped(&self) -> bool {

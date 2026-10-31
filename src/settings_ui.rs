@@ -17,6 +17,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const REFRESH: Duration = Duration::from_secs(1);
+/// The "Shortcuts" entry next to the buttons on the switching tab.
+const SHORTCUTS_TAB: u16 = 0xFFFF;
 
 /// The app icon, scaled by build.rs (WINDOW_ICON there).
 const ICON_SIDE: u32 = 96;
@@ -245,6 +247,8 @@ struct SettingsApp {
     tab: Tab,
     /// The button whose settings are shown, and for the gesture button which gesture.
     button_tab: u16,
+    /// Channel whose keyboard shortcut is being recorded.
+    recording: Option<u8>,
     gesture_tab: Gesture,
     uninstall: Uninstall,
     cfg: Config,
@@ -270,6 +274,7 @@ impl SettingsApp {
         let mut app = SettingsApp {
             tab: Tab::Switching,
             button_tab: BUTTON_WHEEL_MODE,
+            recording: None,
             gesture_tab: Gesture::Press,
             uninstall: Uninstall::Idle,
             cfg: Config::load_or_create().unwrap_or_default(),
@@ -339,6 +344,11 @@ impl eframe::App for SettingsApp {
         self.bring_to_front(ctx);
     }
 
+    /// Closed while recording a shortcut: give the tray app its shortcuts back now.
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.stop_recording();
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let t = texts();
@@ -359,6 +369,9 @@ impl eframe::App for SettingsApp {
             self.refresh();
         }
         ctx.request_repaint_after(REFRESH);
+        if let Some(n) = self.recording {
+            self.capture_shortcut(&ctx, t, n);
+        }
 
         // The header and the tabs stay in place; only the page below them scrolls.
         egui::CentralPanel::default().frame(panel).show(ui, |ui| {
@@ -504,12 +517,21 @@ impl SettingsApp {
             ui.label(RichText::new(t.section_buttons).font(bold(13.0)).color(p.muted));
         });
         ui.add_space(4.0);
+        let tab_ids: Vec<u16> = buttons.iter().map(|b| b.0).chain([SHORTCUTS_TAB]).collect();
         let labels: Vec<String> = buttons
             .iter()
-            .map(|(cid, short, _)| if self.cfg.button(*cid).on { format!("{short} ✓") } else { short.to_string() })
+            .map(|(cid, short, _)| (*short, self.cfg.button(*cid).on))
+            .chain([(t.hotkeys_short, self.cfg.hotkeys.on)])
+            .map(|(short, on)| if on { format!("{short} ✓") } else { short.to_string() })
             .collect();
-        if let Some(i) = segments(ui, p, "button-tabs", &labels, Role::Tab, SEG_NORMAL, |i| buttons[i].0 == self.button_tab) {
-            self.button_tab = buttons[i].0;
+        if let Some(i) = segments(ui, p, "button-tabs", &labels, Role::Tab, SEG_NORMAL, |i| tab_ids[i] == self.button_tab) {
+            self.button_tab = tab_ids[i];
+            self.stop_recording();
+        }
+        if self.button_tab == SHORTCUTS_TAB {
+            ui.add_space(8.0);
+            card(ui, p, |ui| self.shortcut_rows(ui, t, p));
+            return;
         }
         let (cid, _, label) = buttons.into_iter().find(|b| b.0 == self.button_tab).unwrap_or(buttons[0]);
 
@@ -539,6 +561,93 @@ impl SettingsApp {
             }
             ui.add_space(10.0);
         });
+    }
+
+    /// Keyboard shortcuts on/off and one shortcut per channel.
+    fn shortcut_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let mut on = self.cfg.hotkeys.on;
+        if switch_row(ui, p, t.hotkeys_title, None, &mut on) {
+            self.apply(|c| c.hotkeys.on = on);
+            self.stop_recording();
+        }
+        hint(ui, p, t.hotkeys_hint);
+        if !self.cfg.hotkeys.on {
+            ui.add_space(10.0);
+            return;
+        }
+        ui.add_space(6.0);
+        divider(ui, p);
+        let width = (ui.available_width() * 0.66).min(300.0);
+        let (mut start, mut clear) = (None, None);
+        for n in 1..=3u8 {
+            let key = self.cfg.hotkeys.key(n).to_string();
+            let recording = self.recording == Some(n);
+            let failed = !recording && !key.is_empty() && self.status.hotkeys_failed.contains(&n);
+            let (shown, color) = if recording {
+                (t.hotkey_press.to_string(), p.accent)
+            } else if key.is_empty() {
+                (t.hotkey_none.to_string(), p.muted)
+            } else {
+                (crate::hotkey::display(&key), if failed { p.amber } else { p.text })
+            };
+            labeled_row(ui, p, &format!("{} {n}", t.channel), width, ROW_SMALL, |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    if !recording && !key.is_empty() && button(ui, p, t.hotkey_clear, ButtonKind::Plain).clicked() {
+                        clear = Some(n);
+                    }
+                    if !recording && button(ui, p, t.hotkey_change, ButtonKind::Plain).clicked() {
+                        start = Some(n);
+                    }
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(shown).font(bold(14.0)).color(color));
+                });
+                false
+            });
+            if failed {
+                hint(ui, p, t.hotkey_taken);
+            }
+        }
+        hint(ui, p, t.hotkey_rule);
+        ui.add_space(10.0);
+        if let Some(n) = start {
+            self.recording = Some(n);
+            self.error = None;
+            crate::hotkey::hold_pause();
+        }
+        if let Some(n) = clear {
+            self.apply(|c| c.hotkeys.set_key(n, ""));
+        }
+    }
+
+    fn stop_recording(&mut self) {
+        if self.recording.take().is_some() {
+            crate::hotkey::end_pause();
+        }
+    }
+
+    /// Takes the next key combination pressed in this window as channel `n`'s shortcut.
+    fn capture_shortcut(&mut self, ctx: &egui::Context, t: &Texts, n: u8) {
+        crate::hotkey::hold_pause();
+        ctx.request_repaint_after(Duration::from_millis(500));
+        let events = ctx.input(|i| i.events.clone());
+        for event in events {
+            let egui::Event::Key { key, physical_key, pressed: true, modifiers, .. } = event else { continue };
+            // The physical key: with ⌥ held, macOS turns 1 into ¡.
+            let key = physical_key.unwrap_or(key);
+            if key == egui::Key::Escape {
+                self.stop_recording();
+                return;
+            }
+            let Some(text) = shortcut_text(key, modifiers) else { continue };
+            self.stop_recording();
+            if (1..=3).any(|m| m != n && self.cfg.hotkeys.key(m) == text) {
+                self.error = Some(t.hotkey_duplicate.into());
+                return;
+            }
+            self.apply(|c| c.hotkeys.set_key(n, &text));
+            return;
+        }
     }
 
     /// Press and the four hold-and-move gestures, one at a time.
@@ -1122,4 +1231,19 @@ fn button(ui: &mut Ui, p: Palette, label: &str, kind: ButtonKind) -> Response {
     painter.rect_stroke(rect, 9, Stroke::new(1.0, stroke), StrokeKind::Inside);
     painter.text(rect.center(), Align2::CENTER_CENTER, label, font, color);
     resp
+}
+
+/// A shortcut as stored in the settings ("ctrl+alt+1"), or None for keys that make no
+/// good shortcut: a number, letter or F key, with ⌃/⌥/⌘ (Ctrl/Alt) unless it is an F key.
+fn shortcut_text(key: egui::Key, m: egui::Modifiers) -> Option<String> {
+    let name = key.name();
+    let f_key = name.len() > 1 && name.starts_with('F') && name[1..].parse::<u8>().is_ok();
+    let plain = name.len() == 1 && name.chars().all(|c| c.is_ascii_alphanumeric());
+    if !(f_key || plain) || (!f_key && !(m.ctrl || m.alt || m.mac_cmd)) {
+        return None;
+    }
+    let mods = [(m.ctrl, "ctrl"), (m.alt, "alt"), (m.shift, "shift"), (m.mac_cmd, "super")];
+    let mut parts: Vec<&str> = mods.iter().filter(|x| x.0).map(|x| x.1).collect();
+    parts.push(name);
+    Some(parts.join("+").to_lowercase())
 }

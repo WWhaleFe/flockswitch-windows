@@ -197,8 +197,40 @@ pub struct Config {
     pub follow: Vec<String>,
     /// Menu and settings language: "ko" or "en". New settings start with the system's.
     pub language: String,
-    /// Per-button settings. (Kept last: TOML writes tables after plain values.)
+    /// Per-button settings. (Tables last: TOML writes tables after plain values.)
     pub buttons: Buttons,
+    /// Keyboard shortcuts, one per channel.
+    pub hotkeys: Hotkeys,
+}
+
+/// Keyboard shortcuts that send the group and the master mouse to a channel; pressed on
+/// any keyboard connected to this computer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Hotkeys {
+    pub on: bool,
+    /// Shortcut for channel 1, 2 and 3, e.g. "ctrl+alt+1"; empty for none.
+    pub keys: Vec<String>,
+}
+
+impl Default for Hotkeys {
+    fn default() -> Self {
+        Hotkeys { on: false, keys: (1..=3).map(|n| format!("ctrl+alt+{n}")).collect() }
+    }
+}
+
+impl Hotkeys {
+    /// The shortcut of `channel` (1-based); empty when none.
+    pub fn key(&self, channel: u8) -> &str {
+        self.keys.get(usize::from(channel).wrapping_sub(1)).map_or("", String::as_str)
+    }
+
+    pub fn set_key(&mut self, channel: u8, key: &str) {
+        self.keys.resize(3, String::new());
+        if let Some(k) = self.keys.get_mut(usize::from(channel).wrapping_sub(1)) {
+            *k = key.trim().to_lowercase();
+        }
+    }
 }
 
 impl Default for Config {
@@ -209,6 +241,7 @@ impl Default for Config {
             follow: vec!["all".into()],
             language: crate::i18n::system_language().into(),
             buttons: Buttons::default(),
+            hotkeys: Hotkeys::default(),
         }
     }
 }
@@ -368,6 +401,16 @@ impl Config {
     }
 
     fn set_unchecked(&mut self, key: &str, value: &str) -> Result<()> {
+        if key == "hotkeys" || key == "hotkeys.on" {
+            self.hotkeys.on = value.parse().context("hotkeys must be true or false")?;
+            return Ok(());
+        }
+        if let Some(n) = key.strip_prefix("hotkey.") {
+            let channel = n.parse::<u8>().ok().filter(|c| (1..=3).contains(c)).context("use hotkey.1, hotkey.2 or hotkey.3")?;
+            let value = if value.eq_ignore_ascii_case("none") { "" } else { value };
+            self.hotkeys.set_key(channel, value);
+            return Ok(());
+        }
         let list = |v: &str| -> Vec<String> {
             v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
         };
@@ -426,6 +469,13 @@ impl Config {
         }
         anyhow::ensure!(!self.triggers().is_empty(), "turn on at least one button");
         anyhow::ensure!(["ko", "en"].contains(&self.language.as_str()), "language must be ko or en");
+        anyhow::ensure!(self.hotkeys.keys.len() <= 3, "hotkeys: one shortcut per channel (1-3)");
+        let mut seen = Vec::new();
+        for key in self.hotkeys.keys.iter().filter(|k| !k.is_empty()) {
+            let parsed = crate::hotkey::parse(key)?;
+            anyhow::ensure!(!seen.contains(&parsed), "shortcut '{key}' is used for two channels");
+            seen.push(parsed);
+        }
         Ok(())
     }
 
@@ -671,5 +721,24 @@ mod tests {
         assert!(c.follows(None, "MX Keys S"));
         c.follow = vec![];
         assert!(!c.follows(Some(0xB366), "MX Mechanical"));
+    }
+
+    #[test]
+    fn hotkeys() {
+        let mut c = Config::default();
+        assert!(!c.hotkeys.on);
+        assert_eq!(c.hotkeys.key(2), "ctrl+alt+2");
+        c.set("hotkeys", "true").unwrap();
+        c.set("hotkey.3", "Ctrl+Shift+F5").unwrap();
+        assert_eq!(c.hotkeys.key(3), "ctrl+shift+f5");
+        c.set("hotkey.1", "none").unwrap();
+        assert_eq!(c.hotkeys.key(1), "");
+        assert!(c.set("hotkey.3", "ctrl+alt+2").is_err(), "same shortcut twice");
+        assert!(c.set("hotkey.2", "ctrl+alt+").is_err());
+        assert!(c.set("hotkey.4", "ctrl+alt+4").is_err());
+        let back = Config::parse(&toml::to_string_pretty(&c).unwrap()).unwrap();
+        assert_eq!(back.hotkeys, c.hotkeys);
+        // Settings from before shortcuts existed get them off.
+        assert!(!Config::parse("enabled = true").unwrap().hotkeys.on);
     }
 }

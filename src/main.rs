@@ -9,6 +9,7 @@ mod config;
 mod device;
 mod engine;
 mod hidpp;
+mod hotkey;
 mod i18n;
 mod icon;
 mod settings_ui;
@@ -45,6 +46,8 @@ USAGE:
                               set follow all        devices that move along (all, none, or B366,MX Keys)
                               set trigger_device auto
                               set enabled true|false
+                              set hotkeys true      keyboard shortcuts on (any keyboard)
+                              set hotkey.2 ctrl+alt+2          shortcut for channel 2 (none = off)
     flockswitch help
 
 Set RUST_LOG=debug for more detail.";

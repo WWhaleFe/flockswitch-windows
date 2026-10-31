@@ -1322,7 +1322,7 @@ dependencies = [
 
 [[package]]
 name = "flockswitch"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "auto-launch",
@@ -1330,6 +1330,7 @@ dependencies = [
  "dirs 5.0.1",
  "eframe",
  "env_logger",
+ "global-hotkey",
  "hidapi",
  "log",
  "memmap2",
@@ -1702,6 +1703,23 @@ dependencies = [
  "skrifa",
  "smallvec",
  "vello_common",
+]
+
+[[package]]
+name = "global-hotkey"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adda8c76a5139df3bae0eb0413c2cd746f66594e0bb66231a4daa0be3172da70"
+dependencies = [
+ "crossbeam-channel",
+ "keyboard-types",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "once_cell",
+ "thiserror 2.0.21",
+ "windows-sys 0.59.0",
+ "x11rb",
+ "xkeysym",
 ]
 
 [[package]]

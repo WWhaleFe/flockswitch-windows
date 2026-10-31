@@ -471,6 +471,21 @@ impl Engine {
         Ok(())
     }
 
+    /// A keyboard shortcut: the group and the master mouse go to `channel`. Only devices
+    /// on this computer can be told to move.
+    fn on_shortcut(&mut self, channel: u8) {
+        if !self.cfg.enabled {
+            return;
+        }
+        log::info!("shortcut: channel {channel}");
+        if let Err(e) = self.switch_to(channel) {
+            log::warn!("{e:#}");
+        }
+        self.held.clear();
+        self.gesture = None;
+        self.shared.set_status(|s| s.last_switch = Some(format!("→ {channel}")));
+    }
+
     /// Moves everything on, as set for this gesture of the button `cid`.
     fn on_press(&mut self, cid: u16, gesture: Gesture) -> Result<()> {
         let Some(d) = self.trigger.clone() else { return Ok(()) };
@@ -615,6 +630,9 @@ impl Engine {
             }
             if let Err(e) = self.reload_config() {
                 log::warn!("applying settings failed: {e:#}");
+            }
+            if let Some(channel) = self.shared.take_switch_request() {
+                self.on_shortcut(channel);
             }
 
             // Rescan when a receiver or Bluetooth device went away (read error, with
