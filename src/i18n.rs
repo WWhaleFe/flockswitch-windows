@@ -136,7 +136,7 @@ const KO: Texts = Texts {
     hotkey_duplicate: "이미 다른 채널에 쓰는 조합입니다.",
     buttons_hint: "휠 클릭을 켜면 휠을 눌러도 원래 동작(링크 새 탭 열기 등) 대신 전환만 합니다.",
     notice_title: "시작하기 전에",
-    notice: "flockswitch는 Logi Options+와 함께 쓰는 것을 전제로 합니다. 설정하기 전에 Options+에서 전환 탭에서 켤 버튼(휠 모드 전환·제스처·휠 클릭)을 '동작 없음'으로 바꿔 두세요. 그러지 않으면 버튼을 누를 때 Options+의 기능도 함께 실행됩니다.",
+    notice: "flockswitch는 Logi Options+와 함께 쓰는 것을 전제로 합니다. 설정하기 전에 Options+에서 전환 탭에서 켤 버튼(휠 모드 전환·제스처·휠 클릭)을 '동작 없음'으로 바꿔 두세요. 그러지 않으면 버튼을 누를 때 Options+의 기능도 함께 실행됩니다.\n\n지원 마우스: MX Master 3·4를 바탕으로 만들고 시험했습니다. 그 밖의 Logitech 마우스는 아직 시험하지 않아 추후 확인이 필요합니다.",
     language: "언어",
 };
 
@@ -205,7 +205,7 @@ const EN: Texts = Texts {
     hotkey_duplicate: "Already used for another channel.",
     buttons_hint: "With wheel click on, pressing the wheel switches instead of its usual action (e.g. opening a link in a new tab).",
     notice_title: "Before you start",
-    notice: "flockswitch is meant to run alongside Logi Options+. Before setting it up, set each button you turn on in the Switching tab (wheel mode-shift, gesture, wheel click) to “No action” in Options+; otherwise Options+ also runs its own action when you press it.",
+    notice: "flockswitch is meant to run alongside Logi Options+. Before setting it up, set each button you turn on in the Switching tab (wheel mode-shift, gesture, wheel click) to “No action” in Options+; otherwise Options+ also runs its own action when you press it.\n\nSupported mice: flockswitch was built and tested with MX Master 3 and 4. Other Logitech mice have not been tested yet and need checking later.",
     language: "Language",
 };
 

@@ -4,6 +4,7 @@
 
 - Keyboard shortcuts: one per channel (Settings → Switching → Shortcuts, off until turned on; Ctrl+Alt+1 / 2 / 3 until changed). Pressed on any keyboard, they send the group and the master mouse to that channel. Only devices on this PC can be moved. Registered with Windows (no administrator rights); while you set a new one the shortcuts pause, so pressing it records it instead of switching
 - Command line: `set hotkeys true|false`, `set hotkey.<1-3> <keys|none>`
+- Settings → General and the README say which mice flockswitch was built and tested with (MX Master 3 and 4); other Logitech mice are not tested yet
 
 ## 0.4.0 — 2026-10-31
 

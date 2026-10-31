@@ -17,6 +17,10 @@ This repository is the Windows version, prepared for the Microsoft Store. The ma
 - Optional: a Logitech keyboard or other devices on the same channels
 - Logi Options+ (recommended; flockswitch is meant to run alongside it)
 
+## Supported mice
+
+flockswitch was built and tested with the **MX Master 3** and **MX Master 4**. Other Logitech mice with the same buttons (HID++ 2.0 *Change Host* and reprogrammable controls) may work but have **not been tested yet**; testing them is planned. Reports on other mice are welcome.
+
 ## How it works
 
 flockswitch talks HID++ directly to the Logi Bolt / Unifying receiver (or a Bluetooth-connected device):
