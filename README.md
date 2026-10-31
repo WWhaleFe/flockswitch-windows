@@ -68,7 +68,7 @@ flockswitch installs no drivers or services and changes no system settings; it o
 
 ## Privacy
 
-flockswitch talks only to the Logitech devices connected to this PC. It makes no internet connections and sends nothing anywhere. (A port on `127.0.0.1` is held only to stop a second copy from running; nothing is sent or received on it.)
+flockswitch talks only to the Logitech devices connected to this PC. It makes no internet connections and sends nothing anywhere. (A port on `127.0.0.1` is held only to stop a second copy from running; nothing is sent or received on it.) Full policy: [PRIVACY.md](PRIVACY.md).
 
 ## Status
 
