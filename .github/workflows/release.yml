@@ -1,0 +1,78 @@
+# Builds the Windows installer and portable zip from source on a GitHub-hosted runner
+# and publishes them as a GitHub release when a version tag (v*) is pushed.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# Read-only by default; only the release job gets write access.
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match the version in Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [ "$want" != "$have" ]; then echo "tag $GITHUB_REF_NAME but Cargo.toml says $have"; exit 1; fi
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - name: Collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out/flockswitch | Out-Null
+          Copy-Item target/release/flockswitch.exe, LICENSE, README.md, README.ko.md out/flockswitch/
+          Copy-Item packaging/README-ko-windows.txt out/flockswitch/README-ko.txt
+          # The app icon build.rs made, for the installer.
+          $ico = Get-ChildItem target/release/build -Recurse -Filter flockswitch.ico | Select-Object -First 1
+          Copy-Item $ico.FullName out/flockswitch.ico
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flockswitch-windows
+          path: out/flockswitch
+      # Per-user installer (Inno Setup); wraps the same files as the portable zip.
+      - name: Build installer
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$version" "/DSourceDir=$PWD\out\flockswitch" "/DIconFile=$PWD\out\flockswitch.ico" "/DOutputDir=$PWD\out\setup" packaging\windows\flockswitch.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flockswitch-windows-setup
+          path: out/setup
+
+  release:
+    needs: [windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p pkg/win/flockswitch
+          cp -r artifacts/flockswitch-windows/. pkg/win/flockswitch/
+          (cd pkg/win && zip -qr "../../flockswitch-windows-portable-$version.zip" flockswitch)
+          cp "artifacts/flockswitch-windows-setup/flockswitch-setup-$version.exe" .
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" flockswitch-setup-*.exe flockswitch-*.zip \
+            --repo "$GITHUB_REPOSITORY" --title "flockswitch $GITHUB_REF_NAME" --generate-notes
