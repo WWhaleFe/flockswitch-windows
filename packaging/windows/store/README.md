@@ -55,7 +55,7 @@ Store 패키지 버전은 네 자리이고, **첫 자리가 0이면 안 되며**
    `Import-Certificate -FilePath flockswitch-test.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople`
 3. `.msix`를 더블클릭해 설치합니다. GitHub 릴리스판 flockswitch가 실행 중이면 먼저 종료하세요.
 4. 확인할 것:
-   - 처음 실행하면 설정 창이 열리는지
+   - 처음 실행하면 설정 창 없이 알림 영역 아이콘만 나타나는지 (아이콘 메뉴의 "설정…"으로 열림)
    - 마우스 버튼으로 전환되는지
    - 트레이 메뉴가 나오는지
    - 설정 → 일반의 "시작 프로그램 설정" 버튼이 동작하는지
@@ -148,7 +148,7 @@ flockswitch is a desktop utility for Logitech mice. It needs full trust to: open
 
 flockswitch works with a Logitech MX Master 3 or MX Master 4 mouse connected through a Logi Bolt or Unifying receiver or Bluetooth; other hardware is not used.
 
-Without such a mouse: on first launch the settings window opens; its header says "Looking for a supported mouse (Logitech MX Master 3 or 4)…", and the Devices tab says that no mouse with the button was found yet. A tray icon appears in the notification area; its menu opens the settings and quits the app. All settings can be changed and are saved, but nothing switches without the mouse.
+The app starts quietly as an icon in the notification area (it may be in the hidden icons, under the ^ arrow); no window opens on launch or at login. Without such a mouse: hovering the icon and the first line of its menu say "Looking for a supported mouse (Logitech MX Master 3 or 4)…". The menu's "Settings…" opens the settings window (starting the app again opens it too), whose header says the same and whose Devices tab says that no mouse with the button was found yet. The menu also quits the app. All settings can be changed and are saved, but nothing switches without the mouse.
 
 With the mouse: turn on a button in Settings → Switching and choose a channel in "Go to channel"; pressing that mouse button sends the mouse (and any devices chosen in the Devices tab) to that Easy-Switch channel, i.e. to another computer.
 

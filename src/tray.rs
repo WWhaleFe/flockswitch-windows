@@ -154,6 +154,10 @@ fn spawn_engine(shared: Arc<Shared>) -> JoinHandle<()> {
     })
 }
 
+/// Passed by the start at login (`flockswitch tray --login`, here and in the Store
+/// package's startup task), so that start never opens the settings window.
+pub const LOGIN_ARG: &str = "--login";
+
 /// Start at login through the Run registry key. Not for the Store version: its package
 /// declares a startup task instead (a Run entry written from a package is not used).
 pub fn autostart() -> Option<AutoLaunch> {
@@ -163,10 +167,25 @@ pub fn autostart() -> Option<AutoLaunch> {
     let exe = std::env::current_exe().ok()?;
     AutoLaunchBuilder::new()
         .set_app_name("flockswitch")
-        .set_app_path(&exe.to_string_lossy())
+        // Quoted: the arguments follow the path, which may contain spaces.
+        .set_app_path(&format!("\"{}\"", exe.to_string_lossy()))
+        .set_args(&["tray", LOGIN_ARG])
         .set_windows_enable_mode(WindowsEnableMode::CurrentUser)
         .build()
         .ok()
+}
+
+/// Rewrites an existing start-at-login entry, so one written before 1.0.1 (the program
+/// path alone) gains `tray --login` and no longer looks like the user starting it. It
+/// then also points to this copy, the one that runs. One the user switched off stays off.
+pub fn refresh_autostart() {
+    if let Some(al) = autostart() {
+        if al.is_enabled().unwrap_or(false) {
+            if let Err(e) = al.enable() {
+                log::warn!("could not update start at login: {e}");
+            }
+        }
+    }
 }
 
 /// White arrows on a blue tile (grey when paused), visible on light and dark taskbars.
@@ -179,7 +198,7 @@ impl Ui {
     fn create_tray(&mut self) -> Result<()> {
         let menu = self.build_menu();
         let cfg = self.shared.config();
-        let builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip("flockswitch");
+        let builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(self.tooltip());
         let builder = builder.with_icon(tray_icon(cfg.enabled)?);
         let tray = builder.build()?;
         self.tray = Some(tray);
@@ -190,8 +209,10 @@ impl Ui {
     fn refresh(&mut self) {
         let menu = self.build_menu();
         let enabled = self.shared.config().enabled;
+        let tooltip = self.tooltip();
         if let Some(tray) = &self.tray {
             tray.set_menu(Some(Box::new(menu)));
+            let _ = tray.set_tooltip(Some(tooltip));
             if let Ok(icon) = tray_icon(enabled) {
                 let _ = tray.set_icon(Some(icon));
             }
@@ -211,6 +232,24 @@ impl Ui {
         item
     }
 
+    /// The first menu line: paused, running with which mouse, or what it looks for.
+    fn status_line(&self) -> String {
+        let t: &Texts = texts();
+        let st = self.shared.status();
+        if !self.shared.config().enabled {
+            format!("○ {}", t.paused)
+        } else if let Some(trigger) = &st.trigger {
+            format!("● {} — {trigger}", t.running)
+        } else {
+            format!("◌ {}", t.searching)
+        }
+    }
+
+    /// Hovering the icon tells the same, since the app starts without a window.
+    fn tooltip(&self) -> String {
+        format!("flockswitch\n{}", self.status_line())
+    }
+
     fn build_menu(&mut self) -> Menu {
         self.actions.clear();
         let t: &Texts = texts();
@@ -218,14 +257,7 @@ impl Ui {
         let st = self.shared.status();
         let menu = Menu::new();
 
-        let status = if !cfg.enabled {
-            format!("○ {}", t.paused)
-        } else if let Some(trigger) = &st.trigger {
-            format!("● {} — {trigger}", t.running)
-        } else {
-            format!("◌ {}", t.searching)
-        };
-        let _ = menu.append(&MenuItem::new(status, false, None));
+        let _ = menu.append(&MenuItem::new(self.status_line(), false, None));
         if let Some(last) = &st.last_switch {
             let _ = menu.append(&MenuItem::new(format!("{}: {} {last}", t.last_switch, t.channel), false, None));
         }

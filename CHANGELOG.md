@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1 — 2026-11-03
+
+- flockswitch starts quietly as the ⇄ icon in the notification area, also the first time and at every login: no settings window opens. Open it from the icon's menu (**Settings…**) or by starting flockswitch again. Hovering the icon shows what it found (or the mouse it is looking for)
+- Start at login passes `tray --login`, so a second copy started at login (for example the Store version next to the download) never opens the settings window either. An existing start-at-login entry is updated on the next start
+
 ## 1.0.0 — 2026-11-02
 
 - First version for the Microsoft Store (as Flockswitch, by WWhaleFe), the same program as the download here. In the Store version, start at login is managed by Windows: on from the first start, switched in Settings → Apps → Startup (the General tab opens it)

@@ -8,9 +8,10 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 desktop rescap">
+  IgnorableNamespaces="uap uap3 uap10 desktop rescap">
 
   <Identity Name="@IDENTITY_NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
 
@@ -42,8 +43,9 @@
         Square44x44Logo="Assets\Square44x44Logo.png" />
       <Extensions>
         <!-- Start at login: on from the first launch; the user switches it in
-             Settings → Apps → Startup (the Run registry key is not used from a package). -->
-        <desktop:Extension Category="windows.startupTask" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
+             Settings → Apps → Startup (the Run registry key is not used from a package).
+             "tray --login" keeps that start quiet: no settings window. -->
+        <desktop:Extension Category="windows.startupTask" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="tray --login">
           <desktop:StartupTask TaskId="flockswitch" Enabled="true" DisplayName="flockswitch" />
         </desktop:Extension>
         <!-- `flockswitch list` and the other commands from a terminal. -->

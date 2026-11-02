@@ -68,7 +68,7 @@ fn main() {
     let _lock = if tray_mode || args[0] == "run" {
         match single_instance() {
             Some(lock) => Some(lock),
-            None if tray_mode => match already_running() {
+            None if tray_mode => match already_running(args.iter().any(|a| a == tray::LOGIN_ARG)) {
                 Some(lock) => Some(lock),
                 None => std::process::exit(0),
             },
@@ -109,13 +109,10 @@ fn real_main(args: &[String]) -> Result<()> {
     let cmd = args.first().map(String::as_str).unwrap_or("tray");
     match cmd {
         "tray" => {
-            // The first start shows the settings window, which says what flockswitch
-            // needs (a supported Logitech mouse) and what it found so far.
-            let first_run = !Config::path().exists();
+            // Starts quietly in the notification area, the first time too: the icon's
+            // menu and tooltip say what flockswitch needs and found, and open the settings.
             let shared = Arc::new(Shared::new(load_config()));
-            if first_run {
-                tray::open_settings_window();
-            }
+            tray::refresh_autostart();
             tray::run(shared)
         }
         "run" => run_headless(),
@@ -272,13 +269,16 @@ fn load_config() -> Config {
 }
 
 /// Started while the tray app already runs. Starting it again is how people look
-/// for it, so the same version opens the settings window. A different version (for
-/// example an older one still set to start at login) is asked to quit, and this copy
-/// takes over, so the version the user just started is the one that runs.
-fn already_running() -> Option<std::net::TcpListener> {
+/// for it, so the same version opens the settings window, unless this copy was started
+/// at login (`login`): then it quietly leaves. A different version (for example an
+/// older one still set to start at login) is asked to quit, and this copy takes over,
+/// so the version the user just started is the one that runs.
+fn already_running(login: bool) -> Option<std::net::TcpListener> {
     let running = shared::load_status_file().version;
     if running == env!("CARGO_PKG_VERSION") {
-        tray::open_settings_window();
+        if !login {
+            tray::open_settings_window();
+        }
         return None;
     }
     let request = shared::quit_request_path();
