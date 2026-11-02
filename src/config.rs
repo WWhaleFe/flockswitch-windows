@@ -96,7 +96,7 @@ impl Moves {
 /// The next of `channels` after `current` (both 1-based), among the device's `count`,
 /// like the Easy-Switch button under the mouse: with two channels it goes back and
 /// forth, with one it always goes there. None when it is already there.
-fn pick(channels: &[u8], current: u8, count: u8) -> Option<u8> {
+pub fn pick(channels: &[u8], current: u8, count: u8) -> Option<u8> {
     let usable: Vec<u8> = channels.iter().copied().filter(|&c| c <= count).collect();
     let next = match usable.iter().position(|&c| c == current) {
         Some(i) => usable[(i + 1) % usable.len()],

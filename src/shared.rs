@@ -37,6 +37,9 @@ pub struct Status {
     pub buttons: Vec<u16>,
     /// Channels whose keyboard shortcut could not be registered.
     pub hotkeys_failed: Vec<u8>,
+    /// This computer's channel (1-based): the one the master mouse was on when last
+    /// seen here. Kept while the mouse is away.
+    pub channel: Option<u8>,
 }
 
 /// What the engine sees right now, written for the settings window (a separate
@@ -57,6 +60,9 @@ pub struct StatusFile {
     /// Channels whose keyboard shortcut could not be registered.
     #[serde(default)]
     pub hotkeys_failed: Vec<u8>,
+    /// This computer's channel (1-based), for the 이동할 채널 rows.
+    #[serde(default)]
+    pub channel: Option<u8>,
 }
 
 fn status_path() -> std::path::PathBuf {
@@ -279,6 +285,7 @@ impl Shared {
             online: st.devices.iter().filter(|d| d.online).map(|d| d.key.clone()).collect(),
             buttons: st.buttons.clone(),
             hotkeys_failed: st.hotkeys_failed.clone(),
+            channel: st.channel,
             version: env!("CARGO_PKG_VERSION").into(),
         };
         drop(st);

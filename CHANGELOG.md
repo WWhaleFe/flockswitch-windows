@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 — 2026-11-02
+
+- Switching: each button (and each gesture direction) now goes to one channel, “Go to channel” (이동할 채널), instead of stepping through several. Settings are kept per computer, so choose on each PC where it goes; this PC's own channel is shown but cannot be chosen. Settings from earlier versions keep working and show where a press goes from this PC
+
 ## 0.4.2 — 2026-11-02
 
 - Settings window: opens again on PCs where it did nothing (seen with Intel UHD 620). It now draws with Direct3D 12 only instead of also trying Vulkan, whose Intel driver could hang without an error

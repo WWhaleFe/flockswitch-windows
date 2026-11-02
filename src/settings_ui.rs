@@ -3,7 +3,7 @@
 //! engine reloads within a second. Every change applies immediately and the window
 //! stays open, unlike a native menu that closes after each click.
 
-use crate::config::{Config, Gesture, BUTTON_GESTURE, BUTTON_MIDDLE, BUTTON_WHEEL_MODE};
+use crate::config::{pick, Config, Gesture, BUTTON_GESTURE, BUTTON_MIDDLE, BUTTON_WHEEL_MODE};
 use crate::i18n::{texts, Texts};
 use crate::shared::{self, DeviceInfo, StatusFile};
 use anyhow::{anyhow, Result};
@@ -453,7 +453,7 @@ impl eframe::App for SettingsApp {
                 (Tab::General, t.section_general),
             ];
             let labels: Vec<String> = tabs.iter().map(|(_, l)| l.to_string()).collect();
-            if let Some(i) = segments(ui, p, "tabs", &labels, Role::Tab, SEG_NORMAL, |i| tabs[i].0 == self.tab) {
+            if let Some(i) = segments(ui, p, "tabs", &labels, Role::Tab, SEG_NORMAL, None, |i| tabs[i].0 == self.tab) {
                 self.tab = tabs[i].0;
             }
             // Pages are short enough to fit; if one grows (many devices, a long error),
@@ -594,7 +594,7 @@ impl SettingsApp {
             .chain([(t.hotkeys_short, self.cfg.hotkeys.on)])
             .map(|(short, on)| if on { format!("{short} ✓") } else { short.to_string() })
             .collect();
-        if let Some(i) = segments(ui, p, "button-tabs", &labels, Role::Tab, SEG_NORMAL, |i| tab_ids[i] == self.button_tab) {
+        if let Some(i) = segments(ui, p, "button-tabs", &labels, Role::Tab, SEG_NORMAL, None, |i| tab_ids[i] == self.button_tab) {
             self.button_tab = tab_ids[i];
             self.stop_recording();
         }
@@ -735,7 +735,7 @@ impl SettingsApp {
             .map(|(g, l)| if moves.get(*g).is_some_and(|m| m.on) { format!("{l} ✓") } else { l.to_string() })
             .collect();
         ui.add_space(10.0);
-        if let Some(i) = segments(ui, p, "gesture-tabs", &labels, Role::Tab, SEG_SMALL, |i| gestures[i].0 == self.gesture_tab) {
+        if let Some(i) = segments(ui, p, "gesture-tabs", &labels, Role::Tab, SEG_SMALL, None, |i| gestures[i].0 == self.gesture_tab) {
             self.gesture_tab = gestures[i].0;
         }
         hint(ui, p, t.gesture_hint);
@@ -758,35 +758,38 @@ impl SettingsApp {
         }
     }
 
-    /// 사용할 채널 of one slot: toggles, several can be on.
+    /// 이동할 채널 of one slot: the one channel a press sends everything to. Settings are
+    /// kept per computer, so this computer's own channel is shown but cannot be chosen.
     fn action_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette, slot: Slot) {
         let channels = slot_channels(&self.cfg, slot);
+        let here = self.status.channel.filter(|c| (1..=3).contains(c));
+        // Shown as chosen: where a press goes from here (older settings may list several).
+        let target = match here {
+            Some(c) => pick(&channels, c, 3),
+            None => channels.first().copied(),
+        };
         let numbers: Vec<String> = (1..=3).map(|n| n.to_string()).collect();
         let seg_width = (ui.available_width() * 0.5).min(210.0);
         let mut clicked = None;
         ui.add_space(2.0);
         labeled_row(ui, p, t.channels, seg_width, ROW_SMALL, |ui| {
-            clicked = segments(ui, p, &format!("channels-{slot:?}"), &numbers, Role::CheckBox, SEG_SMALL, |i| {
-                channels.contains(&(i as u8 + 1))
+            let locked = here.map(|c| c as usize - 1);
+            clicked = segments(ui, p, &format!("channels-{slot:?}"), &numbers, Role::RadioButton, SEG_SMALL, locked, |i| {
+                target == Some(i as u8 + 1)
             })
             .map(|i| i as u8 + 1);
             false
         });
+        if let Some(c) = here {
+            hint(ui, p, &format!("{} {c}: {}", t.channel, t.here_channel));
+        }
         let Some(n) = clicked else { return };
-        let was_on = channels.contains(&n);
-        if was_on && channels.len() == 1 {
-            self.error = Some(t.need_one_channel.into());
+        if channels == [n] {
             return;
         }
         self.apply(|c| {
             if let Some(channels) = slot_channels_mut(c, slot) {
-                if was_on {
-                    channels.retain(|&x| x != n);
-                } else {
-                    channels.push(n);
-                    channels.sort_unstable();
-                    channels.dedup();
-                }
+                *channels = vec![n];
             }
         });
     }
@@ -1115,6 +1118,7 @@ struct SegSize {
 const SEG_NORMAL: SegSize = SegSize { height: 30.0, text: 14.0 };
 const SEG_SMALL: SegSize = SegSize { height: 26.0, text: 13.0 };
 
+#[allow(clippy::too_many_arguments)]
 fn segments(
     ui: &mut Ui,
     p: Palette,
@@ -1122,6 +1126,8 @@ fn segments(
     labels: &[String],
     role: Role,
     size: SegSize,
+    // A segment shown but not clickable (this computer's channel).
+    locked: Option<usize>,
     selected: impl Fn(usize) -> bool,
 ) -> Option<usize> {
     let toggles = role == Role::CheckBox;
@@ -1137,14 +1143,21 @@ fn segments(
         // Named per bar: the rows sit in look-alike child areas, so an id derived from
         // the area would be shared and one bar's click would also hit the other.
         let id = egui::Id::unique(("segment", name, i));
-        let resp = ui.interact(seg, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let locked = locked == Some(i);
+        let resp = if locked {
+            ui.interact(seg, id, Sense::hover())
+        } else {
+            ui.interact(seg, id, Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand)
+        };
         let on = selected(i);
-        resp.widget_info(|| WidgetInfo::selected(role, true, on, label));
+        resp.widget_info(|| WidgetInfo::selected(role, !locked, on, label));
         if resp.clicked() {
             clicked = Some(i);
         }
         let painter = ui.painter();
-        let (fill, color) = if on {
+        let (fill, color) = if locked {
+            (Color32::TRANSPARENT, p.muted.gamma_multiply(0.5))
+        } else if on {
             (p.accent, Color32::WHITE)
         } else if resp.hovered() {
             (if toggles { p.hover } else { p.card.gamma_multiply(0.6) }, p.text)
@@ -1152,7 +1165,7 @@ fn segments(
             (if toggles { p.card } else { Color32::TRANSPARENT }, p.text)
         };
         painter.rect_filled(seg, 7, fill);
-        if toggles && !on {
+        if toggles && !on && !locked {
             painter.rect_stroke(seg, 7, Stroke::new(1.0, p.track), StrokeKind::Inside);
         }
         let font = if on { bold(size.text) } else { FontId::proportional(size.text) };
@@ -1188,7 +1201,7 @@ fn segmented<T: PartialEq + Copy>(
     size: SegSize,
 ) -> bool {
     let labels: Vec<String> = options.iter().map(|(_, l)| l.to_string()).collect();
-    match segments(ui, p, name, &labels, Role::RadioButton, size, |i| options[i].0 == *value) {
+    match segments(ui, p, name, &labels, Role::RadioButton, size, None, |i| options[i].0 == *value) {
         Some(i) if options[i].0 != *value => {
             *value = options[i].0;
             true

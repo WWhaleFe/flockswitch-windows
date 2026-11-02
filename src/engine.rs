@@ -336,6 +336,7 @@ impl Engine {
             self.trigger = self.pick_trigger()?;
             if let Some(t) = &self.trigger {
                 log::info!("trigger: {}", t.label());
+                self.read_channel();
             }
             self.publish();
         }
@@ -486,6 +487,16 @@ impl Engine {
         self.shared.set_status(|s| s.last_switch = Some(format!("→ {channel}")));
     }
 
+    /// Asks the master mouse, if it is here, which channel it is on — this computer's
+    /// channel, which the settings window keeps on.
+    fn read_channel(&mut self) {
+        let Some(d) = self.trigger.clone() else { return };
+        let Some(ep) = self.endpoints.get_mut(d.endpoint) else { return };
+        if let Ok(Some(state)) = d.host_state(ep) {
+            self.shared.set_status(|s| s.channel = Some(state.current + 1));
+        }
+    }
+
     /// Moves everything on, as set for this gesture of the button `cid`.
     fn on_press(&mut self, cid: u16, gesture: Gesture) -> Result<()> {
         let Some(d) = self.trigger.clone() else { return Ok(()) };
@@ -494,6 +505,7 @@ impl Engine {
             log::warn!("button pressed but {} did not report its channel", d.label());
             return Ok(());
         };
+        self.shared.set_status(|s| s.channel = Some(state.current + 1));
         match self.cfg.button(cid).channel_after(gesture, state.current, state.count) {
             Some(next) => {
                 log::info!("{} button {gesture:?}: channel {} -> {next}", button_name(cid), state.current + 1);
@@ -589,6 +601,9 @@ impl Engine {
             if online {
                 if self.trigger.is_none() || self.is_trigger(endpoint, slot) {
                     self.ensure_diverted()?;
+                }
+                if self.is_trigger(endpoint, slot) {
+                    self.read_channel();
                 }
             } else if left > 1 {
                 self.pending.insert((endpoint, slot), (now + SLOT_SETTLE, left - 1));
