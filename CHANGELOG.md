@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.2 — 2026-11-02
+
+- Settings window: opens again on PCs where it did nothing (seen with Intel UHD 620). It now draws with Direct3D 12 only instead of also trying Vulkan, whose Intel driver could hang without an error
+- Settings window: if nothing is on screen after 8 seconds, it starts again with OpenGL, and says so if that does not work either; a stuck window no longer keeps "Settings…" from doing anything
+- Settings window: when it cannot start because its local port is reserved or blocked (Hyper-V, WSL, Docker), it says so and logs why, instead of quitting silently
+
 ## 0.4.1 — 2026-10-31
 
 - Keyboard shortcuts: one per channel (Settings → Switching → Shortcuts, off until turned on; Ctrl+Alt+1 / 2 / 3 until changed). Pressed on any keyboard, they send the group and the master mouse to that channel. Only devices on this PC can be moved. Registered with Windows (no administrator rights); while you set a new one the shortcuts pause, so pressing it records it instead of switching

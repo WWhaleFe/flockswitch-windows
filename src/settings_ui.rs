@@ -32,7 +32,8 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
     }
     let t = texts();
     let icon = egui::IconData { rgba: ICON_RGBA.to_vec(), width: ICON_SIDE, height: ICON_SIDE };
-    let options = eframe::NativeOptions {
+    #[allow(unused_mut)]
+    let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(t.settings_title)
             .with_icon(icon)
@@ -42,7 +43,16 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
         renderer: renderer(),
         ..Default::default()
     };
+    // wgpu also tries Vulkan by default and picks it first where it exists; the Intel
+    // UHD 620 Vulkan driver was seen to hang there. WGPU_BACKEND still overrides this.
+    #[cfg(windows)]
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
+        use eframe::wgpu::Backends;
+        setup.instance_descriptor.backends = Backends::from_env().unwrap_or(Backends::DX12);
+    }
     log::info!("settings window: {:?} renderer", options.renderer);
+    let shown = Arc::new(AtomicBool::new(false));
+    watch_first_frame(shown.clone());
     eframe::run_native(
         "flockswitch-settings",
         options,
@@ -57,7 +67,7 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
                     ctx.request_repaint();
                 }
             });
-            Ok(Box::new(SettingsApp::new(&cc.egui_ctx, raise)))
+            Ok(Box::new(SettingsApp::new(&cc.egui_ctx, raise, shown)))
         }),
     )
     .map_err(|e| anyhow!("cannot open the settings window: {e}"))
@@ -65,6 +75,54 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
 
 /// Environment variable that makes a relaunched settings window use OpenGL.
 pub const RENDERER_ENV: &str = "FLOCKSWITCH_RENDERER";
+
+/// How long the first frame may take before the graphics driver counts as stuck.
+const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Starts the settings window again in a new process, drawing with OpenGL.
+pub fn relaunch_with_opengl() -> Result<()> {
+    std::process::Command::new(std::env::current_exe()?).arg("settings").env(RENDERER_ENV, "glow").spawn()?;
+    Ok(())
+}
+
+/// A graphics driver can hang instead of returning an error, which leaves no window and
+/// keeps holding the one-window lock, so "Settings…" seems to do nothing from then on.
+/// If nothing is on screen in time, this process gives up: it relaunches with OpenGL,
+/// or says so when OpenGL was already the fallback.
+fn watch_first_frame(shown: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        std::thread::sleep(FIRST_FRAME_TIMEOUT);
+        if shown.load(Ordering::Relaxed) {
+            return;
+        }
+        let secs = FIRST_FRAME_TIMEOUT.as_secs();
+        if cfg!(windows) && std::env::var(RENDERER_ENV).is_err() {
+            log::warn!("no window after {secs}s (the graphics driver does not respond); trying OpenGL");
+            if let Err(e) = relaunch_with_opengl() {
+                log::error!("cannot relaunch the settings window: {e:#}");
+            }
+        } else {
+            let e = anyhow!("no window after {secs}s: the graphics driver does not respond");
+            log::error!("{e:#}");
+            crate::report_settings_failure(&e);
+            if shown.load(Ordering::Relaxed) {
+                return;
+            }
+        }
+        terminate();
+    });
+}
+
+/// Ends this process at once. `exit` would first run the libraries' shutdown code, which
+/// can wait forever on the graphics driver that is stuck.
+fn terminate() -> ! {
+    #[cfg(windows)]
+    unsafe {
+        use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+        TerminateProcess(GetCurrentProcess(), 1);
+    }
+    std::process::exit(1)
+}
 
 /// Direct3D through wgpu, which also works where only OpenGL 1.1 exists; OpenGL when
 /// relaunched as a fallback.
@@ -264,10 +322,13 @@ struct SettingsApp {
     title: &'static str,
     raise: Arc<AtomicBool>,
     icon: egui::TextureHandle,
+    /// Set once a frame has reached the screen (see `watch_first_frame`).
+    shown: Arc<AtomicBool>,
+    frames: u8,
 }
 
 impl SettingsApp {
-    fn new(ctx: &egui::Context, raise: Arc<AtomicBool>) -> SettingsApp {
+    fn new(ctx: &egui::Context, raise: Arc<AtomicBool>, shown: Arc<AtomicBool>) -> SettingsApp {
         let autostart = crate::tray::autostart();
         let autostart_on = autostart.as_ref().is_some_and(|a| a.is_enabled().unwrap_or(false));
         let image = egui::ColorImage::from_rgba_unmultiplied([ICON_SIDE as usize; 2], ICON_RGBA);
@@ -289,6 +350,8 @@ impl SettingsApp {
             raise,
             title: texts().settings_title,
             icon: ctx.load_texture("app-icon", image, egui::TextureOptions::LINEAR),
+            shown,
+            frames: 0,
         };
         app.refresh();
         app
@@ -341,6 +404,13 @@ impl eframe::App for SettingsApp {
     /// Runs even while the window is minimized or fully covered (when `ui` does not),
     /// so "Settings…" can still bring it back.
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // The second frame starts only after the first one was presented.
+        if self.frames < 2 {
+            self.frames += 1;
+            if self.frames == 2 {
+                self.shown.store(true, Ordering::Relaxed);
+            }
+        }
         self.bring_to_front(ctx);
     }
 

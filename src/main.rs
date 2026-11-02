@@ -116,15 +116,24 @@ fn real_main(args: &[String]) -> Result<()> {
             let fallback = std::env::var(settings_ui::RENDERER_ENV).is_ok();
             // A fallback relaunch waits for the failed window's process to let go.
             let tries = if fallback { 30 } else { 1 };
+            let mut bind_error = None;
             let lock = (0..tries).find_map(|i| {
                 if i > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
-                std::net::TcpListener::bind(addr).ok()
+                std::net::TcpListener::bind(addr).map_err(|e| bind_error = Some(e)).ok()
             });
             let Some(lock) = lock else {
-                let _ = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1));
-                return Ok(());
+                let reason = bind_error.map(|e| format!("{e} ({:?})", e.kind())).unwrap_or_default();
+                if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)).is_ok() {
+                    log::info!("settings window already open ({addr}: {reason}); bringing it to the front");
+                    return Ok(());
+                }
+                // Nobody answers: the port is reserved (Hyper-V, WSL and Docker reserve
+                // ranges) or blocked, so no window could ever open. Say so.
+                let e = anyhow::anyhow!("cannot use {addr} for the settings window: {reason}");
+                report_settings_failure(&e);
+                return Err(e);
             };
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| settings_ui::run(lock)))
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("the settings window crashed")));
@@ -132,16 +141,11 @@ fn real_main(args: &[String]) -> Result<()> {
                 // Windows: if Direct3D could not start, try once more with OpenGL.
                 Err(e) if cfg!(windows) && !fallback => {
                     log::warn!("{e:#}; trying OpenGL");
-                    let mut cmd = std::process::Command::new(std::env::current_exe()?);
-                    cmd.args(args).env(settings_ui::RENDERER_ENV, "glow");
-                    cmd.spawn()?;
-                    Ok(())
+                    settings_ui::relaunch_with_opengl()
                 }
                 // Nothing left to try: say so instead of failing silently.
                 Err(e) => {
-                    let t = i18n::texts();
-                    let log = log_path().with_file_name("settings.log");
-                    show_message(&format!("{}\n\n{e:#}\n\n{} {}", t.settings_failed, t.details_in, log.display()));
+                    report_settings_failure(&e);
                     Err(e)
                 }
                 ok => ok,
@@ -294,6 +298,13 @@ pub fn show_message(text: &str) {
     }
     #[cfg(not(windows))]
     eprintln!("{text}");
+}
+
+/// Tells that the settings window cannot open, why, and where its log is.
+pub fn report_settings_failure(e: &anyhow::Error) {
+    let t = i18n::texts();
+    let log = log_path().with_file_name("settings.log");
+    show_message(&format!("{}\n\n{e:#}\n\n{} {}", t.settings_failed, t.details_in, log.display()));
 }
 
 /// Leaves a request file for the running tray app and waits for it to quit.
