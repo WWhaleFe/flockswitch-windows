@@ -879,6 +879,17 @@ impl SettingsApp {
                     }
                 }
                 divider(ui, p);
+            } else if crate::store::packaged() {
+                // The package's startup task: on from the first launch, switched in Settings.
+                let width = button_width(ui, t.open_startup_settings, ButtonKind::Plain);
+                if labeled_row(ui, p, t.autostart, width, ROW_NORMAL, |ui| {
+                    button(ui, p, t.open_startup_settings, ButtonKind::Plain).clicked()
+                }) {
+                    crate::store::open_startup_settings();
+                }
+                hint(ui, p, t.autostart_store);
+                ui.add_space(6.0);
+                divider(ui, p);
             }
             self.uninstall_row(ui, t, p);
         });
@@ -955,7 +966,7 @@ impl SettingsApp {
         card(ui, p, |ui| {
             ui.add_space(12.0);
             if self.uninstall == Uninstall::Done {
-                ui.label(t.uninstall_done);
+                ui.label(if crate::store::packaged() { t.uninstall_done_store } else { t.uninstall_done });
                 ui.add_space(8.0);
                 if button(ui, p, t.close, ButtonKind::Plain).clicked() {
                     ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);

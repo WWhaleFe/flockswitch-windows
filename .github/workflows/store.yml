@@ -1,0 +1,93 @@
+# Builds the Microsoft Store package (MSIX) for upload to Partner Center, and checks that
+# it installs and runs as a package. Runs on version tags and by hand (Actions → Store
+# package → Run workflow).
+#
+# The package identity comes from the repository variables STORE_IDENTITY_NAME,
+# STORE_PUBLISHER and STORE_PUBLISHER_DISPLAY_NAME (Settings → Secrets and variables →
+# Actions → Variables), copied from Partner Center → Product identity. Without them the
+# package gets a test identity and can be tried but not uploaded.
+
+name: Store package
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    env:
+      STORE_IDENTITY_NAME: ${{ vars.STORE_IDENTITY_NAME }}
+      STORE_PUBLISHER: ${{ vars.STORE_PUBLISHER }}
+      STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.STORE_PUBLISHER_DISPLAY_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+
+      - name: Build the MSIX
+        shell: pwsh
+        run: |
+          $identity = @{}
+          if ($env:STORE_IDENTITY_NAME) {
+            $identity = @{
+              IdentityName = $env:STORE_IDENTITY_NAME
+              Publisher = $env:STORE_PUBLISHER
+              PublisherDisplayName = $env:STORE_PUBLISHER_DISPLAY_NAME
+            }
+          } else {
+            Write-Warning "No Store identity variables: building with a test identity (not for upload)."
+          }
+          packaging\windows\store\make-msix.ps1 -Exe target\release\flockswitch.exe -OutDir out\store @identity
+
+      # A copy signed with a throwaway certificate, so the package can be installed here
+      # (and on your own PC) before the Store signs the real one.
+      - name: Test-sign a copy
+        shell: pwsh
+        run: |
+          $msix = Get-ChildItem out\store\*.msix | Select-Object -First 1
+          [xml]$manifest = Get-Content out\store\layout\AppxManifest.xml
+          $publisher = $manifest.Package.Identity.Publisher
+          $cert = New-SelfSignedCertificate -Type Custom -Subject $publisher -KeyUsage DigitalSignature `
+            -FriendlyName "flockswitch test signing" -CertStoreLocation Cert:\CurrentUser\My `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          New-Item -ItemType Directory -Force out\test | Out-Null
+          $signed = "out\test\$($msix.BaseName)-test-signed.msix"
+          Copy-Item $msix.FullName $signed
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /fd SHA256 /sha1 $cert.Thumbprint $signed
+          if ($LASTEXITCODE -ne 0) { throw "signtool failed" }
+          Export-Certificate -Cert $cert -FilePath out\test\flockswitch-test.cer | Out-Null
+
+      - name: Install the test-signed package
+        shell: pwsh
+        run: |
+          Import-Certificate -FilePath out\test\flockswitch-test.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          $signed = Get-ChildItem out\test\*.msix | Select-Object -First 1
+          Add-AppxPackage -Path $signed.FullName
+          Get-AppxPackage *flockswitch* | Format-List Name, Version, PackageFamilyName, InstallLocation, Status
+
+      # Through the package's command alias, so it runs inside the package: no devices
+      # here, but it must start and say "Microsoft Store package".
+      - name: Run it as a package
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $out = & "$env:LOCALAPPDATA\Microsoft\WindowsApps\flockswitch.exe" list 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "Microsoft Store package") { throw "did not run as a package" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flockswitch-store-msix
+          path: out/store/*.msix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flockswitch-store-test-signed
+          path: out/test/

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Microsoft Store package (MSIX) of flockswitch. make-msix.ps1 fills in the @…@
+  values: the identity from Partner Center (Product management → Product identity), the
+  version from Cargo.toml (the Store wants four parts, the last one 0).
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop rescap">
+
+  <Identity Name="@IDENTITY_NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
+
+  <!-- DisplayName must be a name reserved in Partner Center, exactly: "Flockswitch". -->
+  <Properties>
+    <DisplayName>Flockswitch</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <!-- Windows 10 1809 is the oldest Windows the Store installs MSIX packages on. -->
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <!-- The app follows the Windows language (Korean or English); the Store listing has both. -->
+  <Resources>
+    <Resource Language="en-US" />
+    <Resource Language="ko-KR" />
+  </Resources>
+
+  <Applications>
+    <Application Id="flockswitch" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Flockswitch"
+        Description="One mouse button moves your Logitech mouse and keyboard to another computer together"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- Start at login: on from the first launch; the user switches it in
+             Settings → Apps → Startup (the Run registry key is not used from a package). -->
+        <desktop:Extension Category="windows.startupTask" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="flockswitch" Enabled="true" DisplayName="flockswitch" />
+        </desktop:Extension>
+        <!-- `flockswitch list` and the other commands from a terminal. -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="flockswitch.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <!-- A desktop app: talks HID++ to the receiver and Bluetooth devices, shows a tray icon,
+       registers keyboard shortcuts and starts its own settings window. -->
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

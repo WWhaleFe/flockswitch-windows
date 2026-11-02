@@ -14,6 +14,7 @@ mod i18n;
 mod icon;
 mod settings_ui;
 mod shared;
+mod store;
 mod tray;
 
 use anyhow::{bail, Result};
@@ -107,7 +108,16 @@ fn main() {
 fn real_main(args: &[String]) -> Result<()> {
     let cmd = args.first().map(String::as_str).unwrap_or("tray");
     match cmd {
-        "tray" => tray::run(Arc::new(Shared::new(load_config()))),
+        "tray" => {
+            // The first start shows the settings window, which says what flockswitch
+            // needs (a supported Logitech mouse) and what it found so far.
+            let first_run = !Config::path().exists();
+            let shared = Arc::new(Shared::new(load_config()));
+            if first_run {
+                tray::open_settings_window();
+            }
+            tray::run(shared)
+        }
         "run" => run_headless(),
         "settings" => {
             // One settings window at a time. Opening it again knocks on the open
@@ -215,6 +225,8 @@ fn list() -> Result<()> {
     let mut engine = Engine::new(Arc::new(Shared::new(cfg.clone())))?;
     engine.scan()?;
     engine.describe();
+    let kind = if store::packaged() { "Microsoft Store package" } else { "not packaged" };
+    println!("flockswitch {} ({kind})", env!("CARGO_PKG_VERSION"));
     println!();
     for d in engine.devices().to_vec() {
         let ep = engine.endpoint(d.endpoint);

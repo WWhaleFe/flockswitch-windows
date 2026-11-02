@@ -85,6 +85,8 @@ cargo build --release                                      # on Windows
 cargo build --release --target x86_64-pc-windows-gnu       # from macOS/Linux (needs mingw-w64)
 ```
 
+The Microsoft Store package (MSIX): `packaging/windows/store/make-msix.ps1`, built by the *Store package* workflow; see [packaging/windows/store/README.md](packaging/windows/store/README.md) (Korean) for submitting it.
+
 ## License
 
 MIT

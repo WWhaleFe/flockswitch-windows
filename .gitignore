@@ -1,2 +1,6 @@
 /target
 /dist
+.DS_Store
+/Log/
+# Screenshots and other local material
+/flockswitch-win-IMG/

@@ -1,5 +1,5 @@
 //! The app icon master (`packaging/icon/flockswitch.png`, 1024×1024 RGBA) scaled to the
-//! sizes Windows and macOS want. Shared by build.rs and examples/iconset.rs.
+//! sizes Windows wants. Shared by build.rs and examples/store-assets.rs.
 
 use std::path::Path;
 

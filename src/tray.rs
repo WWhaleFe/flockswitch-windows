@@ -154,7 +154,12 @@ fn spawn_engine(shared: Arc<Shared>) -> JoinHandle<()> {
     })
 }
 
+/// Start at login through the Run registry key. Not for the Store version: its package
+/// declares a startup task instead (a Run entry written from a package is not used).
 pub fn autostart() -> Option<AutoLaunch> {
+    if crate::store::packaged() {
+        return None;
+    }
     let exe = std::env::current_exe().ok()?;
     AutoLaunchBuilder::new()
         .set_app_name("flockswitch")
