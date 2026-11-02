@@ -143,6 +143,7 @@ impl Engine {
             }
         }
         self.trigger = self.pick_trigger()?;
+        self.read_channel();
         if let Some(key) = previous.filter(|_| !previous_original.is_empty()) {
             if self.trigger.as_ref().is_some_and(|t| t.key() == key) {
                 // Same master: still diverted; keep what we knew about the originals.

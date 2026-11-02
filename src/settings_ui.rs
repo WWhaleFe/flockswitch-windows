@@ -1118,6 +1118,16 @@ struct SegSize {
 const SEG_NORMAL: SegSize = SegSize { height: 30.0, text: 14.0 };
 const SEG_SMALL: SegSize = SegSize { height: 26.0, text: 13.0 };
 
+/// A chosen segment's accent, drained of most of its colour and sunk toward the track:
+/// reads as taken, but not available.
+fn locked_fill(p: Palette) -> Color32 {
+    let [r, g, b, _] = p.accent.to_array();
+    let gray = 0.3 * r as f32 + 0.59 * g as f32 + 0.11 * b as f32;
+    let [tr, tg, tb, _] = p.track.to_array();
+    let mix = |c: u8, t: u8| (c as f32 * 0.25 + gray * 0.25 + t as f32 * 0.5) as u8;
+    Color32::from_rgb(mix(r, tr), mix(g, tg), mix(b, tb))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn segments(
     ui: &mut Ui,
@@ -1156,7 +1166,7 @@ fn segments(
         }
         let painter = ui.painter();
         let (fill, color) = if locked {
-            (Color32::TRANSPARENT, p.muted.gamma_multiply(0.5))
+            (locked_fill(p), Color32::WHITE.gamma_multiply(0.7))
         } else if on {
             (p.accent, Color32::WHITE)
         } else if resp.hovered() {
@@ -1168,7 +1178,11 @@ fn segments(
         if toggles && !on && !locked {
             painter.rect_stroke(seg, 7, Stroke::new(1.0, p.track), StrokeKind::Inside);
         }
-        let font = if on { bold(size.text) } else { FontId::proportional(size.text) };
+        if locked {
+            // A faint inner shadow: pressed in, not pressable.
+            painter.rect_stroke(seg, 7, Stroke::new(1.5, Color32::from_black_alpha(45)), StrokeKind::Inside);
+        }
+        let font = if on || locked { bold(size.text) } else { FontId::proportional(size.text) };
         // A trailing " ✓" (button or gesture is on) is drawn, not taken from the font:
         // Windows' Korean font has no check mark.
         let (text, mark) = match label.strip_suffix(" ✓") {

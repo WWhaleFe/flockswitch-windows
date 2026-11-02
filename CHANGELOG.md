@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4 — 2026-11-02
+
+- “Go to channel”: this PC's own channel is locked as soon as flockswitch starts. In 0.4.3 it was only found after the first press or after the mouse reconnected, so until then every channel could be chosen
+- “Go to channel”: this PC's own channel is drawn as a grayed-out, sunken box, so it is clearly not available
+
 ## 0.4.3 — 2026-11-02
 
 - Switching: each button (and each gesture direction) now goes to one channel, “Go to channel” (이동할 채널), instead of stepping through several. Settings are kept per computer, so choose on each PC where it goes; this PC's own channel is shown but cannot be chosen. Settings from earlier versions keep working and show where a press goes from this PC
