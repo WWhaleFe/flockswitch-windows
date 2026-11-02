@@ -24,8 +24,10 @@ jobs:
           want="${GITHUB_REF_NAME#v}"
           have=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           if [ "$want" != "$have" ]; then echo "tag $GITHUB_REF_NAME but Cargo.toml says $have"; exit 1; fi
-          # The release notes come from this section.
-          if ! grep -q "^## $want " CHANGELOG.md; then echo "CHANGELOG.md has no '## $want' section"; exit 1; fi
+          # The release notes come from these sections.
+          for f in CHANGELOG.ko.md CHANGELOG.md; do
+            if ! grep -q "^## $want " "$f"; then echo "$f has no '## $want' section"; exit 1; fi
+          done
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked
       - run: cargo build --release --locked
@@ -64,17 +66,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: CHANGELOG.md
+          sparse-checkout: |
+            CHANGELOG.md
+            CHANGELOG.ko.md
           sparse-checkout-cone-mode: false
-      - name: Release notes from CHANGELOG.md
+      - name: Release notes from CHANGELOG.ko.md and CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
           # The lines under "## <version> — <date>", up to the next "## ".
-          awk -v v="$version" '
-            /^## / { if (found) exit; if (index($0, "## " v " ") == 1) { found = 1; next } }
-            found
-          ' CHANGELOG.md | sed '/./,$!d' > notes.md
-          if ! grep -q '[^[:space:]]' notes.md; then echo "CHANGELOG.md has no notes for $version"; exit 1; fi
+          section() {
+            awk -v v="$version" '
+              /^## / { if (found) exit; if (index($0, "## " v " ") == 1) { found = 1; next } }
+              found
+            ' "$1" | sed '/./,$!d'
+          }
+          for f in CHANGELOG.ko.md CHANGELOG.md; do
+            if ! section "$f" | grep -q '[^[:space:]]'; then echo "$f has no notes for $version"; exit 1; fi
+          done
+          { printf '## 변경 사항\n\n'; section CHANGELOG.ko.md; printf '\n## Changes\n\n'; section CHANGELOG.md; } > notes.md
           cat notes.md
       - uses: actions/download-artifact@v4
         with:
