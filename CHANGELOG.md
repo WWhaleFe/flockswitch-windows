@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0 — 2026-11-02
+
+- First version for the Microsoft Store (as Flockswitch, by WWhaleFe), the same program as the download here. In the Store version, start at login is managed by Windows: on from the first start, switched in Settings → Apps → Startup (the General tab opens it)
+- The first start opens the settings window, and while no mouse is found its header names the one flockswitch needs (Logitech MX Master 3 or 4)
+- `flockswitch list` also shows the version and whether it runs as the Store package
+
 ## 0.4.4 — 2026-11-02
 
 - “Go to channel”: this PC's own channel is locked as soon as flockswitch starts. In 0.4.3 it was only found after the first press or after the mouse reconnected, so until then every channel could be chosen
