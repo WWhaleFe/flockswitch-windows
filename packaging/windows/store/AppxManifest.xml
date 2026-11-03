@@ -44,7 +44,8 @@
       <Extensions>
         <!-- Start at login: on from the first launch; the user switches it in
              Settings → Apps → Startup (the Run registry key is not used from a package).
-             "tray --login" keeps that start quiet: no settings window. -->
+             The parameters (tray, then the login flag) keep that start quiet: no
+             settings window. A double hyphen is not allowed in an XML comment. -->
         <desktop:Extension Category="windows.startupTask" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="tray --login">
           <desktop:StartupTask TaskId="flockswitch" Enabled="true" DisplayName="flockswitch" />
         </desktop:Extension>
