@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2 — 2026-11-03
+
+- Microsoft Store version: after an update, flockswitch starts again by itself, quietly in the notification area. Installing a Store update (also the automatic one) closes the running flockswitch, and until now the button did nothing until the next login. The setup program here already restarted it
+
 ## 1.0.1 — 2026-11-03
 
 - flockswitch starts quietly as the ⇄ icon in the notification area, also the first time and at every login: no settings window opens. Open it from the icon's menu (**Settings…**) or by starting flockswitch again. Hovering the icon shows what it found (or the mouse it is looking for)

@@ -1,6 +1,6 @@
 [package]
 name = "flockswitch"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 license = "MIT"
 description = "Turn a spare Logitech mouse button into an Easy-Switch key that moves your mouse and keyboard to another computer together"
@@ -30,7 +30,7 @@ strip = true
 opt-level = "s"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_Packaging_Appx", "Win32_System_Console", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_Packaging_Appx", "Win32_System_Console", "Win32_System_Recovery", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # Windows draws the settings window with Direct3D (wgpu): many PCs (virtual machines,
 # remote desktop, no vendor driver) only offer OpenGL 1.1, which egui's OpenGL renderer
 # cannot use. Direct3D always has a software fallback (WARP). OpenGL stays as a backup.

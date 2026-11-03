@@ -113,6 +113,7 @@ fn real_main(args: &[String]) -> Result<()> {
             // menu and tooltip say what flockswitch needs and found, and open the settings.
             let shared = Arc::new(Shared::new(load_config()));
             tray::refresh_autostart();
+            store::restart_after_update();
             tray::run(shared)
         }
         "run" => run_headless(),

@@ -31,3 +31,20 @@ pub fn open_startup_settings() {
         }
     }
 }
+
+/// Asks Windows to start flockswitch again after closing it to install a Store update (a
+/// package update closes the running app). Started the same way as at login, so it comes
+/// back quietly. Not after a crash or a hang. (The setup program quits and restarts it.)
+pub fn restart_after_update() {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Recovery::{RegisterApplicationRestart, RESTART_NO_CRASH, RESTART_NO_HANG};
+        // Only the arguments: Windows adds the program itself.
+        let args = format!("tray {}", crate::tray::LOGIN_ARG);
+        let wide: Vec<u16> = args.encode_utf16().chain(Some(0)).collect();
+        let result = unsafe { RegisterApplicationRestart(wide.as_ptr(), RESTART_NO_CRASH | RESTART_NO_HANG) };
+        if result != 0 {
+            log::warn!("could not register the restart after an update ({result:#x})");
+        }
+    }
+}
