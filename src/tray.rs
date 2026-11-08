@@ -38,6 +38,7 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
     let s = shared.clone();
     ctrlc::set_handler(move || s.stop.store(true, std::sync::atomic::Ordering::SeqCst))?;
     let engine = spawn_engine(shared.clone());
+    crate::edge::spawn(shared.clone());
 
     let event_loop = EventLoopBuilder::new().build();
 
