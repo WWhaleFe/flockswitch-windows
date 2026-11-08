@@ -6,7 +6,7 @@
 
 flockswitch는 MX Master 마우스의 **휠 모드 전환 버튼, 제스처 버튼, 휠 클릭(휠을 눌러 클릭)** 중 고른 버튼을 Easy-Switch 버튼으로 바꿉니다. 누르면 그룹으로 묶은 장치(키보드, 다른 마우스)가 먼저, 마우스가 마지막으로 **같은 Easy-Switch 채널**로 이동합니다. 컴퓨터끼리 네트워크 연결이 필요 없어서 Logitech Flow를 쓸 수 없는 곳(공용 네트워크, 보안이 엄격한 네트워크)에서도 동작합니다.
 
-이 저장소는 Microsoft Store 등록을 준비하는 Windows 버전입니다. macOS 버전은 [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac)에 있습니다.
+이 저장소는 Microsoft Store 등록을 준비하는 Windows 버전입니다. 다른 버전은 [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac), [flockswitch-linux](https://github.com/WWhaleFe/flockswitch-linux), [flockswitch-android](https://github.com/WWhaleFe/flockswitch-android)에 있으며, 모두 같은 방식으로 전환되어 섞어 쓸 수 있습니다.
 
 > Logitech과 관계없는 개인 오픈소스입니다. "Logitech", "MX Master", "Easy-Switch", "Bolt", "Unifying"은 Logitech의 상표입니다.
 

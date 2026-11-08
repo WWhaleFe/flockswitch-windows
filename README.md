@@ -6,7 +6,7 @@ Press one mouse button and move your Logitech mouse **and** keyboard to another 
 
 flockswitch turns buttons of an MX Master mouse — the wheel mode-shift button, the gesture button and/or the wheel click (pressing the wheel) — into an Easy-Switch key. When you press one, every device in your group (keyboard, other mice) switches to the same Easy-Switch channel, then the mouse follows. It needs no network between the computers, so it works where Logitech Flow cannot (guest/public or locked-down networks).
 
-This repository is the Windows version, prepared for the Microsoft Store. The macOS version lives in [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac).
+This repository is the Windows version, prepared for the Microsoft Store. The others live in [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac), [flockswitch-linux](https://github.com/WWhaleFe/flockswitch-linux) and [flockswitch-android](https://github.com/WWhaleFe/flockswitch-android); all of them switch the same way and can be mixed.
 
 > Not affiliated with Logitech. "Logitech", "MX Master", "Easy-Switch", "Bolt" and "Unifying" are trademarks of Logitech.
 
