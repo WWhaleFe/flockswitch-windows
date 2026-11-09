@@ -1,6 +1,6 @@
 [package]
 name = "flockswitch"
-version = "1.2.0"
+version = "1.3.0"
 edition = "2021"
 license = "MIT"
 description = "Turn a spare Logitech mouse button into an Easy-Switch key that moves your mouse and keyboard to another computer together"
@@ -20,6 +20,8 @@ log = "0.4"
 memmap2 = "0.9"
 serde = { version = "1", features = ["derive"] }
 sys-locale = "0.3.2"
+# Draws the countdown and locate effects (overlay_render.rs).
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
 tao = "0.37.2"
 toml = "0.8"
 tray-icon = "0.26.1"
@@ -30,7 +32,7 @@ strip = true
 opt-level = "s"
 
 [target."cfg(windows)".dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_Packaging_Appx", "Win32_System_Console", "Win32_System_Recovery", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_Packaging_Appx", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_Recovery", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # Windows draws the settings window with Direct3D (wgpu): many PCs (virtual machines,
 # remote desktop, no vendor driver) only offer OpenGL 1.1, which egui's OpenGL renderer
 # cannot use. Direct3D always has a software fallback (WARP). OpenGL stays as a backup.
