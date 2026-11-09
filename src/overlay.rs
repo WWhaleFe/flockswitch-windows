@@ -4,7 +4,7 @@
 //! puts them on the screen in click-through layered windows, updated at about 60 Hz by
 //! one thread of its own. Windows exist only while an effect is showing.
 
-use crate::config::{Edge, Edges, LocateStyle};
+use crate::config::{parse_color, Edge, Edges, Locate, DEFAULT_EFFECT_COLOR};
 use crate::edge::Rect;
 use crate::overlay_render as render;
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
@@ -14,9 +14,9 @@ use std::time::{Duration, Instant};
 const FRAME: Duration = Duration::from_micros(16_667);
 
 enum Command {
-    EdgeBegin { display: Rect, edge: i32, style: i32, direction: i32, shrink: bool, elapsed: Duration, duration: Duration, preview: bool },
+    EdgeBegin { display: Rect, edge: i32, style: i32, direction: i32, shrink: bool, elapsed: Duration, duration: Duration, preview: bool, color: [u8; 3] },
     EdgeEnd,
-    Locate(i32),
+    Locate(i32, [u8; 3]),
 }
 
 static COMMANDS: OnceLock<Sender<Command>> = OnceLock::new();
@@ -34,6 +34,11 @@ pub fn set_ready() {
     });
 }
 
+/// A colour from the settings as red, green and blue.
+fn components(text: &str) -> [u8; 3] {
+    parse_color(text).or(parse_color(DEFAULT_EFFECT_COLOR)).unwrap_or([255, 204, 0])
+}
+
 fn send(command: Command) {
     if let Some(commands) = COMMANDS.get() {
         let _ = commands.send(command);
@@ -45,12 +50,13 @@ pub fn edge_begin(edges: &Edges, edge: Edge, display: &Rect, elapsed: Duration, 
     send(Command::EdgeBegin {
         display: *display,
         edge: edge as i32,
-        style: edges.anim_style as i32,
+        style: edges.anim_style.resolved() as i32,
         direction: edges.anim_direction as i32,
         shrink: edges.anim_shrink,
         elapsed,
         duration,
         preview,
+        color: components(&edges.anim_color),
     });
 }
 
@@ -60,8 +66,8 @@ pub fn edge_end() {
 }
 
 /// Shows where the cursor is, for a moment.
-pub fn locate(style: LocateStyle) {
-    send(Command::Locate(style as i32));
+pub fn locate(locate: &Locate) {
+    send(Command::Locate(locate.style.resolved() as i32, components(&locate.color)));
 }
 
 /// An effect in progress. `Layer` goes when it does.
@@ -74,6 +80,7 @@ struct EdgeEffect {
     preview: bool,
     started: Instant,
     duration: f64,
+    color: [u8; 3],
     scale: f64,
 }
 
@@ -82,6 +89,7 @@ struct LocateEffect {
     style: i32,
     full_screen: bool,
     started: Instant,
+    color: [u8; 3],
     scale: f64,
 }
 
@@ -94,17 +102,17 @@ struct Effects {
 impl Effects {
     fn handle(&mut self, command: Command) {
         match command {
-            Command::EdgeBegin { display, edge, style, direction, shrink, elapsed, duration, preview } => {
+            Command::EdgeBegin { display, edge, style, direction, shrink, elapsed, duration, preview, color } => {
                 self.edge = None;
                 if render::edge_has_effect(style) {
-                    self.edge = begin_edge(&display, edge, style, direction, shrink, elapsed, duration, preview);
+                    self.edge = begin_edge(&display, edge, style, direction, shrink, elapsed, duration, preview, color);
                 }
             }
             Command::EdgeEnd => self.edge = None,
-            Command::Locate(style) => {
+            Command::Locate(style, color) => {
                 self.locate = None;
                 if render::locate_exists(style) {
-                    self.locate = begin_locate(style);
+                    self.locate = begin_locate(style, color);
                 }
             }
         }
@@ -161,7 +169,7 @@ fn strip_of(display: &Rect, edge: i32, depth: i32) -> (i32, i32, i32, i32) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn begin_edge(display: &Rect, edge: i32, style: i32, direction: i32, shrink: bool, elapsed: Duration, duration: Duration, preview: bool) -> Option<EdgeEffect> {
+fn begin_edge(display: &Rect, edge: i32, style: i32, direction: i32, shrink: bool, elapsed: Duration, duration: Duration, preview: bool, color: [u8; 3]) -> Option<EdgeEffect> {
     let center = (display.x + display.w / 2.0, display.y + display.h / 2.0);
     let scale = platform::scale_at(center.0 as i32, center.1 as i32);
     let depth = (render::STRIP_DEPTH * scale).round() as i32;
@@ -169,7 +177,7 @@ fn begin_edge(display: &Rect, edge: i32, style: i32, direction: i32, shrink: boo
     let layer = platform::Layer::new(x, y, w, h)?;
     let started = Instant::now().checked_sub(elapsed).unwrap_or_else(Instant::now);
     let duration = duration.as_secs_f64().max(0.05);
-    Some(EdgeEffect { layer, edge, style, direction, shrink, preview, started, duration, scale })
+    Some(EdgeEffect { layer, edge, style, direction, shrink, preview, started, duration, color, scale })
 }
 
 /// Draws the next frame of the countdown. False when it has finished.
@@ -189,12 +197,13 @@ fn draw_edge(effect: &mut EdgeEffect) -> bool {
         scale: effect.scale,
         t,
         duration: effect.duration,
+        color: effect.color,
     };
     effect.layer.draw(|pixmap| render::draw_edge(pixmap, &draw));
     true
 }
 
-fn begin_locate(style: i32) -> Option<LocateEffect> {
+fn begin_locate(style: i32, color: [u8; 3]) -> Option<LocateEffect> {
     let (mx, my) = platform::cursor()?;
     let scale = platform::scale_at(mx, my);
     // Only the spotlight darkens the whole display; the others follow the cursor.
@@ -206,7 +215,7 @@ fn begin_locate(style: i32) -> Option<LocateEffect> {
         (mx - side / 2, my - side / 2, side, side)
     };
     let layer = platform::Layer::new(x, y, w, h)?;
-    Some(LocateEffect { layer, style, full_screen, started: Instant::now(), scale })
+    Some(LocateEffect { layer, style, full_screen, started: Instant::now(), color, scale })
 }
 
 /// Draws the next frame of the highlight. False when it has finished.
@@ -227,8 +236,8 @@ fn draw_locate(effect: &mut LocateEffect) -> bool {
         }
         (f64::from(w) / 2.0, f64::from(h) / 2.0)
     };
-    let (style, scale) = (effect.style, effect.scale);
-    effect.layer.draw(|pixmap| render::draw_locate(pixmap, style, center, scale, t));
+    let (style, scale, color) = (effect.style, effect.scale, effect.color);
+    effect.layer.draw(|pixmap| render::draw_locate(pixmap, style, center, scale, t, color));
     true
 }
 
