@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1 — 2026-11-10
+
+- Haptics is back in its own card under Find the cursor in the left column, as on the Mac; in 1.7.0 it sat at the top of the language card and broke the layout
+- More room between rows and the lines between them. Rows with a segment bar or buttons on the right (size, language, shortcut) sat almost on the line below, because the control pulled the row's height in; now the space above and below is even
+- The settings window opens 960 tall to fit the extra room, so the General tab still fits without scrolling
+
 ## 1.7.0 — 2026-11-10
 
 - **Settings backup** (Settings → General): **Save** writes the settings as `flockswitch-settings-<computer>-<date-time>.toml` into Documents\flockswitch, **Load…** lists the files there, newest first, and after you confirm loads the one chosen (a file that is not a flockswitch settings file, or has a value this version cannot use, is refused with the reason), and **Open folder** opens that folder in Explorer. A file saved by the macOS or Linux version loads too: settings Windows does not have are passed over, and a shortcut Windows cannot use (one with ⌘) is left empty. Channels are set per computer, so check them after loading on another computer

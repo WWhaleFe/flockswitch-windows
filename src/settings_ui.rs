@@ -34,7 +34,7 @@ const ICON_SIDE: u32 = 96;
 const ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/window-icon.rgba"));
 
 /// The settings window's inner size to start with, and its limits, in points.
-const WINDOW_SIZE: [f32; 2] = [840.0, 870.0];
+const WINDOW_SIZE: [f32; 2] = [840.0, 960.0];
 const WINDOW_MIN: [f32; 2] = [760.0, 640.0];
 const WINDOW_MAX: [f32; 2] = [1200.0, 1100.0];
 
@@ -603,12 +603,12 @@ impl eframe::App for SettingsApp {
                             self.group_section(ui, t, p);
                         }
                         Tab::General => {
-                            // The notice and finding the cursor on the left; haptics, the
-                            // language, updates, backups and maintenance on the right, so
-                            // both columns fit the window.
+                            // As on the Mac: the notice, finding the cursor and haptics on
+                            // the left; language, updates, backups and maintenance on the right.
                             two_columns(ui, |left, right| {
                                 notice(left, p, t);
                                 self.locate_section(left, t, p);
+                                self.haptics_summary(left, t, p);
                                 self.preferences_card(right, t, p);
                                 self.update_section(right, t, p);
                                 self.backup_section(right, t, p);
@@ -1220,24 +1220,24 @@ impl SettingsApp {
     }
 
     /// Haptics in one row of the preferences card, with the button that opens their window.
-    fn haptics_row(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+    fn haptics_summary(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         let h = &self.cfg.haptics;
         let state = if h.on_switch || h.on_arrive || h.on_edge { t.haptics_state_on } else { t.haptics_state_off };
         let strength = if h.intensity == 0 { t.haptics_follow.to_string() } else { format!("{}%", h.intensity) };
         let line = format!("{state} · {} {strength}", t.haptics_intensity);
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_NORMAL), Sense::hover());
-        let painter = ui.painter();
-        let left = Pos2::new(rect.left(), rect.center().y);
-        painter.text(left - Vec2::new(0.0, 1.0), Align2::LEFT_BOTTOM, t.section_haptics, FontId::proportional(14.5), p.text);
-        painter.text(left + Vec2::new(0.0, 3.0), Align2::LEFT_TOP, &line, FontId::proportional(12.5), p.muted);
-        let width = button_width(ui, t.haptics_open, ButtonKind::Plain);
-        let area = Rect::from_min_max(
-            Pos2::new(rect.right() - width, rect.center().y - 15.0),
-            Pos2::new(rect.right(), rect.center().y + 15.0),
-        );
         let mut open = false;
-        ui.scope_builder(UiBuilder::new().max_rect(area), |ui| {
-            open = button(ui, p, t.haptics_open, ButtonKind::Plain).clicked();
+        // Its own titled card, as on the Mac.
+        section(ui, p, t.section_haptics, |ui| {
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_SMALL), Sense::hover());
+            ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, &line, FontId::proportional(14.0), p.text);
+            let width = button_width(ui, t.haptics_open, ButtonKind::Plain);
+            let area = Rect::from_min_max(
+                Pos2::new(rect.right() - width, rect.center().y - 15.0),
+                Pos2::new(rect.right(), rect.center().y + 15.0),
+            );
+            ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
+                open = button(ui, p, t.haptics_open, ButtonKind::Plain).clicked();
+            });
         });
         if open {
             self.stop_recording();
@@ -1440,8 +1440,6 @@ impl SettingsApp {
     fn preferences_card(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         ui.add_space(12.0);
         card(ui, p, |ui| {
-            self.haptics_row(ui, t, p);
-            divider(ui, p);
             let mut language = self.cfg.language.clone();
             let choices = [("ko", "한국어"), ("en", "English")];
             let width = (ui.available_width() * 0.62).min(250.0);
@@ -1934,11 +1932,17 @@ fn info_box(ui: &mut Ui, p: Palette, text: &str) {
         });
 }
 
-/// A thin line between rows, edge to edge inside the card.
+/// A thin line between rows, edge to edge inside the card, with room above and below so
+/// a row's control never sits on it.
 fn divider(ui: &mut Ui, p: Palette) {
+    ui.add_space(DIVIDER_GAP);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter().hline(rect.x_range(), rect.center().y, Stroke::new(1.0, p.border));
+    ui.add_space(DIVIDER_GAP);
 }
+
+/// The room a divider keeps above and below it.
+const DIVIDER_GAP: f32 = 4.0;
 
 fn hint(ui: &mut Ui, p: Palette, text: &str) {
     ui.add_space(2.0);
@@ -2042,7 +2046,9 @@ fn labeled_row_info(
         Pos2::new(rect.right() - width, rect.center().y - 15.0),
         Pos2::new(rect.right(), rect.center().y + 15.0),
     );
-    ui.scope_builder(UiBuilder::new().max_rect(area), control).inner
+    // A child, not a scope: a scope would pull the cursor back up to the control's
+    // bottom, and the next row or divider would crowd it.
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(control).inner
 }
 
 /// Equal-width buttons in one row. `selected(i)` says which are on; returns the index
@@ -2207,7 +2213,7 @@ fn situation_row(ui: &mut Ui, p: Palette, t: &Texts, label: &str, on: &mut bool,
         Pos2::new(rect.right(), rect.center().y + 15.0),
     );
     let mut pressed = false;
-    ui.scope_builder(UiBuilder::new().max_rect(area), |ui| {
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             toggle(ui, p, label, on);
@@ -2229,7 +2235,7 @@ fn dialog_row(ui: &mut Ui, p: Palette, label: &str, width: f32, control: impl Fn
         Pos2::new(rect.right() - width, rect.center().y - 15.0),
         Pos2::new(rect.right(), rect.center().y + 15.0),
     );
-    ui.scope_builder(UiBuilder::new().max_rect(area), |ui| {
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
     });
 }
@@ -2262,7 +2268,7 @@ fn confirm_row(ui: &mut Ui, p: Palette, explain: &str, labels: &[(&str, ButtonKi
         Pos2::new(rect.right(), rect.center().y + 15.0),
     );
     let mut clicked = None;
-    ui.scope_builder(UiBuilder::new().max_rect(area), |ui| {
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.horizontal(|ui| {
             for (i, (label, kind)) in labels.iter().enumerate() {
