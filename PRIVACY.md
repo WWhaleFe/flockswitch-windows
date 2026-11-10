@@ -2,11 +2,11 @@
 
 **English** · [한국어](#개인정보처리방침--flockswitch-windows)
 
-Effective date: October 31, 2026 · Applies to flockswitch for Windows 0.4.0 and later, from the Microsoft Store or from [GitHub Releases](https://github.com/WWhaleFe/flockswitch-windows/releases).
+Effective date: November 10, 2026 · Applies to flockswitch for Windows 1.6.0 and later, from the Microsoft Store or from [GitHub Releases](https://github.com/WWhaleFe/flockswitch-windows/releases).
 
 ## Summary
 
-flockswitch collects no personal data and sends nothing anywhere. It makes no internet connections. Everything it keeps stays on your PC, in files you can read and delete.
+flockswitch collects no personal data and sends nothing about you anywhere. Its only internet connection is the look for a new version, which you can turn off. Everything it keeps stays on your PC, in files you can read and delete.
 
 ## What flockswitch does with data
 
@@ -26,7 +26,7 @@ No serial numbers, account details, names, locations, files, or anything you typ
 
 ## What flockswitch does not do
 
-- **No internet.** It does not check for updates, send reports, or contact any server. Updates come from the Microsoft Store (or from the GitHub releases page, when you choose to download one).
+- **No internet beyond updates.** At start and once a day, while **Settings → General → Updates → Check for new versions automatically** is on (and whenever you press **Check now**), it looks for a new version: the Microsoft Store version asks the Microsoft Store through Windows; the version from GitHub asks GitHub's public releases API over https and, to install, downloads the new release file from GitHub and checks it against the release's published SHA-256 list. These requests carry only what any web request does (your IP address, and a "flockswitch/<version>" user agent); no account, settings, devices or other data are sent. With **Install new versions automatically** on, a new version is installed by itself. It sends no reports and contacts no other server.
 - **No tracking, analytics, advertising or crash reporting.**
 - **No keyboard monitoring.** Keyboard shortcuts are registered with Windows (RegisterHotKey); Windows tells flockswitch only when one of its own shortcuts is pressed. No other key presses reach the app.
 - **No sharing.** Nothing is sold or shared with anyone, including the developer and Logitech.
@@ -59,11 +59,11 @@ flockswitch is an independent open-source project, not affiliated with Logitech.
 
 [English](#privacy-policy--flockswitch-for-windows) · **한국어**
 
-시행일: 2026년 10월 31일 · Microsoft Store 또는 [GitHub Releases](https://github.com/WWhaleFe/flockswitch-windows/releases)에서 받은 flockswitch Windows 0.4.0 이상에 적용됩니다.
+시행일: 2026년 11월 10일 · Microsoft Store 또는 [GitHub Releases](https://github.com/WWhaleFe/flockswitch-windows/releases)에서 받은 flockswitch Windows 1.6.0 이상에 적용됩니다.
 
 ## 요약
 
-flockswitch는 개인정보를 수집하지 않으며 어떤 정보도 외부로 보내지 않습니다. 인터넷에 연결하지 않습니다. 앱이 보관하는 내용은 모두 이 PC 안의 파일에 있으며, 직접 열어 보거나 지울 수 있습니다.
+flockswitch는 개인정보를 수집하지 않으며 사용자에 관한 어떤 정보도 외부로 보내지 않습니다. 인터넷 연결은 새 버전 확인뿐이며, 끌 수 있습니다. 앱이 보관하는 내용은 모두 이 PC 안의 파일에 있으며, 직접 열어 보거나 지울 수 있습니다.
 
 ## flockswitch가 다루는 정보
 
@@ -83,7 +83,7 @@ flockswitch는 이 PC에 연결된 Logitech 장치(Logi Bolt·Unifying 수신기
 
 ## flockswitch가 하지 않는 것
 
-- **인터넷 연결 없음.** 업데이트 확인, 리포트 전송 등 어떤 서버에도 연결하지 않습니다. 업데이트는 Microsoft Store(또는 사용자가 직접 받는 GitHub 릴리스)로만 합니다.
+- **업데이트 외 인터넷 연결 없음.** **설정 → 일반 → 업데이트 → 자동으로 새 버전 확인**이 켜져 있으면 시작할 때와 하루에 한 번(그리고 **지금 확인**을 누를 때) 새 버전을 확인합니다. Microsoft Store 버전은 Windows를 통해 Microsoft Store에 묻고, GitHub에서 받은 버전은 GitHub의 공개 릴리스 API에 https로 묻습니다. 설치할 때는 GitHub에서 새 릴리스 파일을 내려받아, 릴리스에 함께 게시된 SHA-256 목록과 맞는지 확인합니다. 이 요청에는 일반적인 웹 요청에 포함되는 정보(IP 주소, "flockswitch/<버전>" 사용자 에이전트)만 담기며, 계정·설정·장치 등 다른 정보는 보내지 않습니다. **새 버전 자동 설치**가 켜져 있으면 새 버전을 스스로 설치합니다. 리포트를 보내거나 그 밖의 서버에 연결하지 않습니다.
 - **추적·분석·광고·충돌 보고 없음.**
 - **키보드 입력 감시 없음.** 키보드 단축키는 Windows에 등록(RegisterHotKey)하며, Windows는 flockswitch에 등록된 단축키가 눌렸을 때만 알려 줍니다. 그 밖의 키 입력은 앱에 전달되지 않습니다.
 - **제3자 제공 없음.** 개발자와 Logitech을 포함해 누구에게도 정보를 판매하거나 제공하지 않습니다.

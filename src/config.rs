@@ -516,6 +516,11 @@ pub struct Config {
     pub follow: Vec<String>,
     /// Menu and settings language: "ko" or "en". New settings start with the system's.
     pub language: String,
+    /// Look for a new version at start and once a day: the Microsoft Store version asks
+    /// the Store, the others GitHub.
+    pub check_updates: bool,
+    /// Install a new version found by that check by itself, then start again.
+    pub auto_update: bool,
     /// Per-button settings. (Tables last: TOML writes tables after plain values.)
     pub buttons: Buttons,
     /// Keyboard shortcuts, one per channel.
@@ -565,6 +570,8 @@ impl Default for Config {
             trigger_device: "auto".into(),
             follow: vec!["all".into()],
             language: crate::i18n::system_language().into(),
+            check_updates: true,
+            auto_update: true,
             buttons: Buttons::default(),
             hotkeys: Hotkeys::default(),
             edges: Edges::default(),
@@ -880,6 +887,8 @@ impl Config {
             }
             "trigger_device" => self.trigger_device = value.trim().to_string(),
             "language" => self.language = value.trim().to_lowercase(),
+            "check_updates" => self.check_updates = value.parse().context("check_updates must be true or false")?,
+            "auto_update" => self.auto_update = value.parse().context("auto_update must be true or false")?,
             // Which buttons are on, e.g. "wheel_mode,gesture" or "0x00C4,0x00C3".
             // `triggers` / `trigger_cid` are the names older versions used.
             "buttons" | "triggers" | "trigger_cid" => {

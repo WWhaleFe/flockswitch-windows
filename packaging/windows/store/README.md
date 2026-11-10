@@ -142,7 +142,7 @@ Logitech, Easy-Switch, MX Master, mouse, keyboard, KVM, multi computer
 
 ### runFullTrust 사유 (영어로 입력)
 
-flockswitch is a desktop utility for Logitech mice. It needs full trust to: open the Logitech receiver and Bluetooth HID devices and exchange HID++ reports with them (to catch the chosen mouse button and send the Easy-Switch "change host" command); show a notification-area (tray) icon and menu; register global keyboard shortcuts; and start its own settings window as a second process. It makes no network connections and writes only to its own settings folder.
+flockswitch is a desktop utility for Logitech mice. It needs full trust to: open the Logitech receiver and Bluetooth HID devices and exchange HID++ reports with them (to catch the chosen mouse button and send the Easy-Switch "change host" command); show a notification-area (tray) icon and menu; register global keyboard shortcuts; and start its own settings window as a second process. Its only network use is asking the Microsoft Store for a newer package (Windows.Services.Store), which the user can turn off; it writes only to its own settings folder.
 
 ### 인증 참고 사항 (영어로 입력)
 
@@ -152,4 +152,4 @@ The app starts quietly as an icon in the notification area (it may be in the hid
 
 With the mouse: turn on a button in Settings → Switching and choose a channel in "Go to channel"; pressing that mouse button sends the mouse (and any devices chosen in the Devices tab) to that Easy-Switch channel, i.e. to another computer.
 
-The app starts at login through its startup task (switchable in Settings → Apps → Startup). It makes no internet connections and needs no account. Source code: https://github.com/WWhaleFe/flockswitch-windows
+The app starts at login through its startup task (switchable in Settings → Apps → Startup). Its only network use is Settings → General → Updates, which asks the Microsoft Store (Windows.Services.Store) for a newer package at start and once a day and, with "Install new versions automatically" on, installs it quietly; both can be switched off there. It needs no account. Source code: https://github.com/WWhaleFe/flockswitch-windows

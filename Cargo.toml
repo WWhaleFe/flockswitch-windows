@@ -1,6 +1,6 @@
 [package]
 name = "flockswitch"
-version = "1.5.0"
+version = "1.6.0"
 edition = "2021"
 license = "MIT"
 description = "Turn a spare Logitech mouse button into an Easy-Switch key that moves your mouse and keyboard to another computer together"
@@ -19,6 +19,7 @@ hidapi = "2"
 log = "0.4"
 memmap2 = "0.9"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 sys-locale = "0.3.2"
 # Draws the countdown and locate effects (overlay_render.rs).
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
@@ -32,6 +33,8 @@ strip = true
 opt-level = "s"
 
 [target."cfg(windows)".dependencies]
+# The Store version asks the Microsoft Store for updates (Windows.Services.Store).
+windows = { version = "0.62.2", features = ["ApplicationModel", "Foundation", "Foundation_Collections", "Services_Store", "Win32_System_WinRT"] }
 windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Storage_Packaging_Appx", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_Recovery", "Win32_System_Threading", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # Windows draws the settings window with Direct3D (wgpu): many PCs (virtual machines,
 # remote desktop, no vendor driver) only offer OpenGL 1.1, which egui's OpenGL renderer

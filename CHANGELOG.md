@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.0 — 2026-11-10
+
+- **Automatic updates**: Settings → General → **Updates** shows the version, has **Check now** / **Update now**, and two switches, **Check for new versions automatically** (at start and once a day) and **Install new versions automatically** (`set check_updates`, `set auto_update`). The tray menu offers a new version too
+  - Microsoft Store version: asks the Microsoft Store and installs the new version in the background; flockswitch closes for a moment and starts again
+  - Setup and portable versions: look at the GitHub releases, check the downloaded file against the release's SHA256SUMS.txt, then run the setup program quietly or, portable, swap the program file and start again
+- The haptics window's 'Feel' button is now called **Test**
+- Releases include SHA256SUMS.txt
+- Privacy policy: the update check and download are the only internet connection
+
 ## 1.5.0 — 2026-11-10
 
 - Haptics window: each situation on one line (name, pulse, Feel, switch), and 'use haptics / strength' set apart from the situations with more room between rows

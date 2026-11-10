@@ -38,6 +38,7 @@ Get the latest build from [Releases](../../releases).
 - **Installer**: run `flockswitch-setup-<version>.exe`. It installs for the current user only (no administrator rights; `%LOCALAPPDATA%\Programs\flockswitch`), adds Start-menu entries and an uninstaller (Settings → Apps), and upgrades in place.
 - **Portable**: unzip `flockswitch-windows-portable-<version>.zip` to a folder you will keep (start-at-login remembers this location) and run `flockswitch.exe`.
 - If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
+- New versions: the app looks for them and installs them itself (**Settings → General → Updates**, below).
 
 New versions are not downloaded by the app; get them from Releases (or, once listed, the Microsoft Store).
 
@@ -49,7 +50,7 @@ An ⇄ icon appears in the notification area (click ^ if it is hidden). Its menu
 - **Shortcuts** (on the same tab, next to the buttons): keyboard shortcuts, one per channel (Ctrl+Alt+1 / 2 / 3 until you change them), pressed on any keyboard. They send the group and the master mouse to that channel. Only devices on this PC can be moved, so a keyboard that does not move along (a wired one, say) can send them away but not bring them back — press the shortcut on the other computer for that. No administrator rights needed.
 - **Edges** (same tab): rest the cursor against an outer edge of the screen for a moment (0.3 to 2 s, your choice) and the group and the master mouse go to the channel set for that side. No network: each computer watches its own screen, so turn it on on every computer and give each side the channel of the computer that stands there. While it waits an effect in the colour you choose runs down near the cursor, in the size you choose (ring, semicircle, bar, pulse, laser, vortex, scan, liquid or random), and you can require Ctrl to be held. When the mouse comes back, the cursor appears at the edge it left by. The corners do not count, and with several displays an edge that continues onto another display does not switch.
 - **Devices**: the master mouse, and the devices that move along (Bolt, Unifying and Bluetooth devices can be mixed; devices on another computer are listed too)
-- **General**: haptics on a mouse with a motor, currently the MX Master 4 (a summary and the **Haptics Settings…** window: on/off, strength, a pulse as the mouse leaves and one when it is back, each with its own waveform or random, rising or even pulses at an edge, and **Feel** to try them), find the cursor (a pulse ring, radar, spotlight or random effect in the colour and size you choose, from a shortcut, on arrival from another computer, or by shaking the mouse), show the log, reset settings, the note on Logi Options+, language (Korean or English; the first run follows the system), start at login (current user only, no admin rights), uninstall
+- **General**: haptics on a mouse with a motor, currently the MX Master 4 (a summary and the **Haptics Settings…** window: on/off, strength, a pulse as the mouse leaves and one when it is back, each with its own waveform or random, rising or even pulses at an edge, and **Test** to try them), find the cursor (a pulse ring, radar, spotlight or random effect in the colour and size you choose, from a shortcut, on arrival from another computer, or by shaking the mouse), updates (the version, **Check now** / **Update now**, the release page — the Store page for the Store version — and two switches: **Check for new versions automatically**, at start and once a day, and **Install new versions automatically**; the Store version gets it from the Microsoft Store in the background, the GitHub version checks the file against the release's SHA256SUMS.txt and runs the setup program quietly or, portable, swaps the program file; flockswitch closes for a moment and starts again; the tray menu offers a new version too), show the log, reset settings, the note on Logi Options+, language (Korean or English; the first run follows the system), start at login (current user only, no admin rights), uninstall
 
 Before setting it up, set each button you turn on to **No action** in Logi Options+, so pressing it does not also run an Options+ action. When flockswitch quits or a button is turned off, the button is put back exactly as it was (including Options+'s own setting).
 
@@ -69,7 +70,7 @@ flockswitch installs no drivers or services and changes no system settings; it o
 
 ## Privacy
 
-flockswitch talks only to the Logitech devices connected to this PC. It makes no internet connections and sends nothing anywhere. (A port on `127.0.0.1` is held only to stop a second copy from running; nothing is sent or received on it.) Full policy: [PRIVACY.md](PRIVACY.md).
+flockswitch talks only to the Logitech devices connected to this PC. Its only internet connection is the look for (and download of) a new version, which you can turn off; nothing about you is sent. (A port on `127.0.0.1` is held only to stop a second copy from running; nothing is sent or received on it.) Full policy: [PRIVACY.md](PRIVACY.md).
 
 ## Status
 

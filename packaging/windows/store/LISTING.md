@@ -1,8 +1,8 @@
-# Microsoft Store 목록 개편안 (1.5.0 이후)
+# Microsoft Store 목록 개편안 (1.6.0)
 
 작성: 2026-11-10 · 대상: Partner Center → Flockswitch(9NN9ZLHLGSKN) → Store listings (ko-KR, en-US)
-기준 화면: Windows 1.5.0. 새 스크린샷도 1.5.0으로 찍으므로 설명은 1.5.0 화면의 메뉴·탭·문구와 기본값을 그대로 따릅니다(코드로 확인).
-적용 시점: 1.5.0(submission 4)이 게시된 뒤, 새 스크린샷과 함께 새 제출로 올립니다. 패키지는 바꾸지 않습니다.
+기준 화면: Windows 1.6.0. 설명은 1.6.0 화면의 메뉴·탭·문구와 기본값을 그대로 따릅니다(코드로 확인).
+적용: 1.6.0 패키지, 새 설명, 새 스크린샷을 한 제출로 올립니다.
 
 ---
 
@@ -31,7 +31,7 @@
 | 시작 방법 | "모든 컴퓨터에 설치하세요" 한 줄 | 6단계 설정 순서 |
 | 문제 해결 | 없음 | 자주 겪는 4가지 |
 | 제품 기능(Product features) | 없음 | 14개 항목 |
-| 이번 버전의 새로운 기능 | 없음 | 1.5.0 변경 사항 |
+| 이번 버전의 새로운 기능 | 없음 | 1.6.0 변경 사항 |
 | 스크린샷 | 작은 설정 창 3장, 1.0 화면 | 6장 구성안과 캡션 |
 
 ## 2. 현재 목록의 문제점
@@ -57,7 +57,7 @@
 - **정책 준수:**
   - 다른 회사 상표(Logitech, MX Master, Easy-Switch, Logi Bolt, Unifying, Logi Options+, Logitech Flow)는 설명에서만 쓰고 검색어에는 넣지 않습니다(정책 10.1.3).
   - 상표 고지와 "Logitech과 관계없음"을 유지합니다.
-- **개인정보:** Windows 앱은 인터넷에 전혀 연결하지 않습니다. 업데이트 확인도 하지 않는다는 것을 코드에서 확인했습니다. 이 점을 분명히 씁니다.
+- **개인정보:** Store 버전의 인터넷 연결은 Microsoft Store에 새 버전을 묻는 것뿐이고(끌 수 있음), 사용자 정보는 보내지 않습니다. 코드에서 확인했고, 이 점을 분명히 씁니다.
 - **두 언어 동일:** ko-KR과 en-US의 구성과 내용을 같게 맞춥니다. 패키지가 두 언어를 선언하므로 두 목록이 모두 필요합니다.
 - **용어:** 앱 화면의 용어를 그대로 씁니다. 예: "진동"("파형" 아님), "이동할 채널", "함께 이동할 장치", "대기 효과", "머무는 시간".
 
@@ -118,13 +118,14 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
 • 마우스 찾기: 커서 위치를 펄스 링, 레이더, 스포트라이트, 랜덤 효과로 강조합니다. 단축키로 표시(기본 Ctrl+Alt+L), 다른 컴퓨터에서 마우스가 도착했을 때, 마우스를 빠르게 흔들었을 때 중에서 고릅니다. 색상과 크기도 정합니다.
 • 진동: 진동 모터가 있는 마우스(현재 MX Master 4)용. 요약을 보고 "진동 설정…"으로 자세히 정합니다.
 • 언어(한국어/English), 로그인 시 자동 실행(시작 프로그램 설정 열기)
+• 업데이트: 현재 버전, 지금 확인 / 지금 업데이트, Store 페이지. "자동으로 새 버전 확인"(시작할 때와 하루에 한 번)과 "새 버전 자동 설치"를 각각 켜고 끌 수 있습니다. 자동 설치는 Microsoft Store에서 새 버전을 백그라운드로 받아 설치하고, 그동안 flockswitch가 잠시 닫혔다가 다시 켜집니다.
 • 로그 보기, 설정 초기화…, flockswitch 제거…
 
 [진동 설정 창]
 • 진동 사용, 진동 세기(Options+ 설정 따르기, 25~100%)
 • 마우스가 떠날 때 / 마우스가 돌아왔을 때: 각각 켜고 진동 종류를 고릅니다. 랜덤도 고를 수 있습니다.
 • 모서리에서 기다리는 동안: 점점 강하게 또는 일정하게
-• 느껴보기: 고른 진동을 고른 세기로 마우스에서 바로 울립니다.
+• 진동 확인: 고른 진동을 고른 세기로 마우스에서 바로 울립니다.
 • 적용 / 확인 / 닫기: 닫기를 누르면 창을 열기 전 상태로 되돌립니다.
 
 ■ 이렇게 써 보세요
@@ -138,7 +139,7 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
 • Logi Options+와 함께 쓰는 것을 전제로 합니다.
 
 ■ 개인정보와 안전
-• 이 PC에 연결된 Logitech 장치와만 통신합니다. 인터넷에 연결하지 않고, 계정이 없으며, 어떤 정보도 수집하거나 보내지 않습니다.
+• 이 PC에 연결된 Logitech 장치와만 통신합니다. 계정이 없으며, 어떤 정보도 수집하거나 보내지 않습니다. 인터넷 연결은 Microsoft Store에 새 버전을 묻는 것뿐이고, 설정에서 끌 수 있습니다.
 • 드라이버나 서비스를 설치하지 않습니다. flockswitch를 끄거나 종료하면 버튼이 원래 설정 그대로 돌아갑니다.
 • 로그인할 때 창 없이 알림 영역에서 조용히 시작합니다. 자동 실행은 Windows 설정 → 앱 → 시작 프로그램에서 끌 수 있습니다.
 
@@ -163,12 +164,14 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
+1.6.0
+• 자동 업데이트: 설정 → 일반 → 업데이트에서 새 버전을 확인하고, 자동 설치를 켜 두면 Microsoft Store에서 백그라운드로 받아 설치합니다. 자동 확인과 자동 설치는 각각 켜고 끌 수 있습니다.
+• 진동 설정 창의 '느껴보기' 버튼 이름을 '진동 확인'으로 바꿨습니다.
+
 1.5.0
 • 진동 설정을 상황별로 정리: 마우스가 떠날 때, 돌아왔을 때, 모서리에서 기다리는 동안을 각각 한 줄에서 켜고 진동을 고릅니다.
-• 느껴보기: 고른 진동을 고른 세기로 마우스에서 바로 울려 봅니다.
-• 랜덤 진동: 떠날 때·돌아왔을 때 진동을 매번 다르게.
-• 효과 크기: 모서리 대기 효과와 마우스 찾기 효과를 75~150%로 조절.
-• 설정 창 정리: 버튼·목록·선택 막대의 높이와 간격을 통일하고, 일반 탭이 스크롤 없이 한 화면에 들어옵니다.
+• 진동 확인: 고른 진동을 고른 세기로 마우스에서 바로 울려 봅니다.
+• 랜덤 진동과 효과 크기(75~150%), 더 정돈된 설정 창.
 ```
 
 ### 4-4. 제품 기능 (Product features, 항목당 200자 이내)
@@ -183,9 +186,10 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 Ctrl을 누른 동안에만 모서리 전환하는 옵션
 Logi Bolt·Unifying·블루투스 장치를 섞어서 함께 이동
 마우스 찾기: 단축키·도착·흔들기로 커서 강조
-MX Master 4 진동: 떠날 때·돌아왔을 때·모서리 대기, 느껴보기
+MX Master 4 진동: 떠날 때·돌아왔을 때·모서리 대기, 진동 확인
 컴퓨터끼리 네트워크 연결 없이 동작
-인터넷 연결·계정·데이터 수집 없음
+Microsoft Store 자동 업데이트(켜고 끌 수 있음)
+계정·데이터 수집 없음
 드라이버·서비스 설치 없음, 끄면 버튼이 원래대로
 한국어·영어 지원
 ```
@@ -255,13 +259,14 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 • Find the cursor: highlight the cursor with a pulse ring, radar, spotlight or random effect. It can show with a shortcut (Ctrl+Alt+L by default), on arrival from another computer, or when you shake the mouse, in the colour and size you choose.
 • Haptics: for a mouse with a haptic motor (currently the MX Master 4). A summary, and "Haptics Settings…" for the details.
 • Language (Korean / English), Start at login (opens the startup settings).
+• Updates: the version, Check now / Update now, and the Store page. "Check for new versions automatically" (at start and once a day) and "Install new versions automatically" each switch on and off. Automatic install gets the new version from the Microsoft Store in the background; flockswitch closes for a moment and starts again.
 • Show log, Reset settings…, Uninstall flockswitch…
 
 [Haptics Settings window]
 • Use haptics, and Strength (as set in Options+, or 25 to 100%).
 • As the mouse leaves / When the mouse is back: each with its own switch and pulse, or Random.
 • While waiting at an edge: Rising or Even.
-• Feel: play the chosen pulse on the mouse at the chosen strength.
+• Test: play the chosen pulse on the mouse at the chosen strength.
 • Apply / OK / Close: Close puts back what was set when the window opened.
 
 ■ Ideas to try
@@ -275,7 +280,7 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 • Meant to run alongside Logi Options+.
 
 ■ Privacy and safety
-• It talks only to the Logitech devices connected to this PC. No internet connection, no account, nothing collected or sent.
+• It talks only to the Logitech devices connected to this PC. No account, nothing collected or sent. Its only internet use is asking the Microsoft Store for a new version, which you can turn off in the settings.
 • No drivers or services are installed. Turn flockswitch off or quit it and the buttons go back to exactly how they were.
 • It starts quietly in the notification area at sign-in, with no window. Turn that off in Windows Settings → Apps → Startup.
 
@@ -300,12 +305,14 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 ### 5-3. What's new in this version
 
 ```
+1.6.0
+• Automatic updates: Settings → General → Updates looks for a new version, and with automatic install on, gets it from the Microsoft Store in the background. Checking and installing each switch on and off.
+• The haptics window's 'Feel' button is now called 'Test'.
+
 1.5.0
 • Haptics by situation: as the mouse leaves, when it is back and while it waits at an edge each have one line with their own switch and pulse.
-• Feel: play the chosen pulse on the mouse at the chosen strength.
-• Random pulse: a different pulse each time the mouse leaves or comes back.
-• Effect size: the edge countdown and find-the-cursor effects from 75 to 150%.
-• Tidier settings: buttons, drop-downs and segment bars share one height and spacing, and the General tab fits without scrolling.
+• Test: play the chosen pulse on the mouse at the chosen strength.
+• Random pulse, effect size (75 to 150%) and a tidier settings window.
 ```
 
 ### 5-4. Product features
@@ -320,9 +327,10 @@ Eight edge countdown effects plus random, in your colour and size
 Option to switch at an edge only while Ctrl is held
 Mix Logi Bolt, Unifying and Bluetooth devices in one group
 Find the cursor from a shortcut, on arrival or by shaking the mouse
-MX Master 4 haptics as the mouse leaves, comes back and waits, with Feel
+MX Master 4 haptics as the mouse leaves, comes back and waits, with Test
 No network needed between the computers
-No internet connection, no account, no data collected
+Automatic updates from the Microsoft Store (can be turned off)
+No account, no data collected
 No drivers or services; buttons go back to normal when off
 Korean and English
 ```
@@ -348,13 +356,14 @@ mouse switch, keyboard switch, multi computer, KVM, multi PC, channel switch, ed
 | 2 | 전환 탭 → 모서리: 방향별 채널과 대기 효과 | 화면 가장자리에 대면 그쪽 컴퓨터로 | Rest on a screen edge to move to that computer |
 | 3 | 모서리에서 대기 효과가 줄어드는 순간(커서 근처) | 남은 시간을 보여 주는 대기 효과 | A countdown effect while it waits |
 | 4 | 장치 탭: 함께 이동할 장치 | 키보드와 다른 장치를 함께 이동 | Keyboard and other devices move along |
-| 5 | 일반 탭 + 진동 설정 창 | 진동과 마우스 찾기 | Haptics and find the cursor |
+| 5 | 일반 탭(마우스 찾기·진동·업데이트) | 마우스 찾기, 진동, 자동 업데이트 | Find the cursor, haptics and automatic updates |
+| 5-1 | 진동 설정 창 | 상황마다 진동을 고르고 바로 확인 | Pick a pulse for each moment and test it |
 | 6 | 알림 영역 ⇄ 메뉴 | 알림 영역에서 조용히 동작 | Runs quietly in the notification area |
 
 ## 7. 적용 순서 (이미지 교체 요청을 받으면)
 
-1. Partner Center에서 1.5.0(submission 4)이 게시됐는지 확인합니다.
-2. **Start update**로 새 제출을 만듭니다. 패키지는 그대로 둡니다.
+1. Partner Center에서 이전 제출이 게시됐는지 확인합니다.
+2. **Start update**로 새 제출을 만들고, 패키지에 1.6.0 MSIX를 올립니다.
 3. Store listings → **한국어**:
    - 4-1~4-4를 붙여 넣습니다.
    - 기존 스크린샷을 지우고 새 스크린샷과 6번의 캡션을 넣습니다.

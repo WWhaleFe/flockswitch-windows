@@ -11,6 +11,7 @@ use crate::device::waveform;
 use crate::hotkey::LOCATE;
 use crate::i18n::{texts, Texts};
 use crate::shared::{self, DeviceInfo, HapticPreview, StatusFile};
+use crate::update::{self, UpdateState};
 use anyhow::{anyhow, Result};
 use auto_launch::AutoLaunch;
 use eframe::egui::{
@@ -360,6 +361,8 @@ struct SettingsApp {
     confirm_reset: bool,
     /// A colour being dragged in the picker; saved when the mouse button comes up.
     color_draft: Option<(EffectColor, [u8; 3])>,
+    /// "Check now" / "Update now" from this window, done in the background.
+    update: Arc<std::sync::Mutex<UpdateState>>,
 }
 
 /// Which on-screen effect a colour row sets.
@@ -424,6 +427,7 @@ impl SettingsApp {
             haptics_dialog: None,
             confirm_reset: false,
             color_draft: None,
+            update: Arc::default(),
         };
         app.refresh();
         app
@@ -566,13 +570,14 @@ impl eframe::App for SettingsApp {
                             self.group_section(ui, t, p);
                         }
                         Tab::General => {
-                            // No update or report section here, so haptics goes on the right
-                            // and both columns fit the window.
+                            // Haptics and updates go on the right, so both columns fit the
+                            // window.
                             two_columns(ui, |left, right| {
                                 notice(left, p, t);
                                 self.locate_section(left, t, p);
                                 self.haptics_summary(right, t, p);
                                 self.preferences_card(right, t, p);
+                                self.update_section(right, t, p);
                                 self.maintenance_card(right, t, p);
                             });
                         }
@@ -1377,6 +1382,106 @@ impl SettingsApp {
                 hint(ui, p, t.autostart_store);
                 ui.add_space(6.0);
             }
+        });
+    }
+
+    /// This version, a look for a new one now, and the automatic look and install.
+    fn update_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let state = self.update.lock().unwrap().clone();
+        let ctx = ui.ctx().clone();
+        let store = crate::store::packaged();
+        section(ui, p, t.section_update, |ui| {
+            let (status, color) = match &state {
+                UpdateState::Idle => (String::new(), p.muted),
+                UpdateState::Checking => (t.update_checking.to_string(), p.muted),
+                UpdateState::UpToDate => (t.update_up_to_date.to_string(), p.green),
+                UpdateState::Available(v) => (format!("{} {v}", t.update_available), p.accent),
+                UpdateState::Installing(_) => (t.update_installing.to_string(), p.muted),
+                UpdateState::Failed => (t.update_failed.to_string(), p.amber),
+                UpdateState::InstallFailed(_) => (t.update_install_failed.to_string(), p.amber),
+            };
+            // The version on the left, the buttons on the right, what the look found below.
+            ui.horizontal(|ui| {
+                ui.set_min_height(ROW_SMALL);
+                ui.label(RichText::new(format!("{} {}", t.update_current, env!("CARGO_PKG_VERSION"))).size(14.0).color(p.text));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let page = if store { t.update_page_store } else { t.update_page };
+                    if button(ui, p, page, ButtonKind::Plain).clicked() {
+                        update::open_url(update::page());
+                    }
+                    match &state {
+                        UpdateState::Available(v) | UpdateState::InstallFailed(v) => {
+                            if button(ui, p, t.update_install, ButtonKind::Primary).clicked() {
+                                self.install_update(&ctx, v.clone());
+                            }
+                        }
+                        UpdateState::Checking | UpdateState::Installing(_) => {}
+                        _ => {
+                            if button(ui, p, t.update_check, ButtonKind::Plain).clicked() {
+                                self.check_update(&ctx);
+                            }
+                        }
+                    }
+                });
+            });
+            if !status.is_empty() {
+                ui.label(RichText::new(status).size(13.0).color(color));
+            }
+            ui.add_space(6.0);
+            divider(ui, p);
+            let mut on = self.cfg.check_updates;
+            if switch_row(ui, p, t.update_check_auto, None, &mut on) {
+                self.apply(|c| c.check_updates = on);
+            }
+            divider(ui, p);
+            ui.add_enabled_ui(self.cfg.check_updates, |ui| {
+                let mut on = self.cfg.auto_update;
+                if switch_row(ui, p, t.update_auto, None, &mut on) {
+                    self.apply(|c| c.auto_update = on);
+                }
+            });
+            hint(ui, p, if store { t.update_hint_store } else { t.update_hint });
+            ui.add_space(6.0);
+        });
+    }
+
+    /// Looks for a new version in the background.
+    fn check_update(&self, ctx: &egui::Context) {
+        let (state, ctx) = (self.update.clone(), ctx.clone());
+        *state.lock().unwrap() = UpdateState::Checking;
+        std::thread::spawn(move || {
+            let next = match update::find() {
+                Ok(Some(v)) => UpdateState::Available(v),
+                Ok(None) => UpdateState::UpToDate,
+                Err(e) => {
+                    log::info!("update check failed: {e:#}");
+                    UpdateState::Failed
+                }
+            };
+            *state.lock().unwrap() = next;
+            ctx.request_repaint();
+        });
+    }
+
+    /// Installs the new version in the background. The setup and portable versions then
+    /// close this window too, so the program file is free to be replaced; the Store
+    /// closes it by itself.
+    fn install_update(&self, ctx: &egui::Context, version: String) {
+        let (state, ctx) = (self.update.clone(), ctx.clone());
+        *state.lock().unwrap() = UpdateState::Installing(version.clone());
+        std::thread::spawn(move || {
+            match update::install() {
+                Ok(()) => {
+                    log::info!("update {version}: installing; closing the settings window");
+                    std::process::exit(0);
+                }
+                Err(e) => {
+                    log::warn!("update {version} not installed: {e:#}");
+                    *state.lock().unwrap() = UpdateState::InstallFailed(version);
+                }
+            }
+            ctx.request_repaint();
         });
     }
 

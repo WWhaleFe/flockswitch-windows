@@ -40,6 +40,8 @@ pub struct Status {
     /// This computer's channel (1-based): the one the master mouse was on when last
     /// seen here. Kept while the mouse is away.
     pub channel: Option<u8>,
+    /// The latest look for a new version (the tray menu offers it).
+    pub update: crate::update::UpdateState,
 }
 
 /// What the engine sees right now, written for the settings window (a separate

@@ -50,6 +50,8 @@ Name: "{autodesktop}\flockswitch"; Filename: "{app}\flockswitch.exe"; Tasks: des
 
 [Run]
 Filename: "{app}\flockswitch.exe"; Description: "{cm:LaunchProgram,flockswitch}"; Flags: nowait postinstall skipifsilent
+; A silent install is flockswitch updating itself: start the new version again, quietly.
+Filename: "{app}\flockswitch.exe"; Parameters: "tray --login"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 ; Gives the mouse button back, removes start-at-login and the settings, quits the app.
@@ -63,5 +65,12 @@ var
 begin
   Result := '';
   if FileExists(ExpandConstant('{app}\flockswitch.exe')) then
+  begin
     Exec(ExpandConstant('{app}\flockswitch.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    // A settings window still open from this folder would keep the program file in use.
+    Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+      '-NoProfile -NonInteractive -Command "Get-Process flockswitch -ErrorAction SilentlyContinue | ' +
+      'Where-Object { $_.Path -eq ''' + ExpandConstant('{app}\flockswitch.exe') + ''' } | Stop-Process -Force"',
+      '', SW_HIDE, ewWaitUntilTerminated, Code);
+  end;
 end;

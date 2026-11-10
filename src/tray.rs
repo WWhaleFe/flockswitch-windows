@@ -6,6 +6,7 @@ use crate::engine::Engine;
 use crate::i18n::{texts, Texts};
 use crate::icon;
 use crate::shared::{Shared, Status};
+use crate::update::UpdateState;
 use anyhow::Result;
 use auto_launch::{AutoLaunch, AutoLaunchBuilder, WindowsEnableMode};
 use std::collections::HashMap;
@@ -21,6 +22,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
 enum Action {
     Enabled,
     Settings,
+    Update,
     Quit,
 }
 
@@ -39,6 +41,7 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
     ctrlc::set_handler(move || s.stop.store(true, std::sync::atomic::Ordering::SeqCst))?;
     let engine = spawn_engine(shared.clone());
     crate::edge::spawn(shared.clone());
+    crate::update::spawn_periodic(shared.clone());
 
     let event_loop = EventLoopBuilder::new().build();
 
@@ -274,6 +277,16 @@ impl Ui {
         let _ = menu.append(&PredefinedMenuItem::separator());
 
         let _ = menu.append(&MenuItem::new(format!("flockswitch {}", env!("CARGO_PKG_VERSION")), false, None));
+        match &st.update {
+            UpdateState::Available(v) | UpdateState::InstallFailed(v) => {
+                let item = self.item(format!("{} ({v})", t.update_install), Action::Update);
+                let _ = menu.append(&item);
+            }
+            UpdateState::Installing(v) => {
+                let _ = menu.append(&MenuItem::new(format!("{} ({v})", t.update_installing), false, None));
+            }
+            _ => {}
+        }
         let _ = menu.append(&PredefinedMenuItem::separator());
         let quit = self.item(t.quit, Action::Quit);
         let _ = menu.append(&quit);
@@ -290,6 +303,12 @@ impl Ui {
                 }
             }
             Action::Settings => open_settings_window(),
+            Action::Update => {
+                if let UpdateState::Available(v) | UpdateState::InstallFailed(v) = self.shared.status().update {
+                    let shared = self.shared.clone();
+                    std::thread::spawn(move || crate::update::install_into(&shared, v));
+                }
+            }
         }
         self.refresh();
         false

@@ -19,6 +19,7 @@ mod settings_ui;
 mod shared;
 mod store;
 mod tray;
+mod update;
 
 use anyhow::{bail, Result};
 use config::Config;
@@ -76,6 +77,8 @@ USAGE:
                               set locate.hotkey ctrl+alt+l     its shortcut (none = off)
                               set locate.arrival true          when the mouse arrives from another computer
                               set locate.shake true            when the mouse is shaken
+                              set check_updates true           look for a new version at start and daily
+                              set auto_update true             install it by itself and start again
     flockswitch help
 
 Set RUST_LOG=debug for more detail.";
@@ -141,6 +144,7 @@ fn real_main(args: &[String]) -> Result<()> {
             let shared = Arc::new(Shared::new(load_config()));
             tray::refresh_autostart();
             store::restart_after_update();
+            update::remove_leftovers();
             tray::run(shared)
         }
         "run" => run_headless(),
