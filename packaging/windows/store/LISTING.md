@@ -165,6 +165,9 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
+1.7.1
+• 진동 설정을 '마우스 찾기' 아래 별도 카드로 옮기고, 설정 창의 줄과 구분선 사이 간격을 넓혀 화면을 정돈했습니다.
+
 1.7.0
 • 설정 백업: 설정을 문서\flockswitch 폴더에 파일로 저장하고 불러옵니다. 파일을 옮겨 다른 PC에서도 같은 설정을 쓸 수 있습니다.
 • 마우스 찾기의 흔들기: 흔드는 시간(0.5~2초)과 함께 누를 키(Ctrl·Alt·Shift)를 정할 수 있어, 잠깐 흔들린 것으로는 뜨지 않습니다.
@@ -311,6 +314,9 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 ### 5-3. What's new in this version
 
 ```
+1.7.1
+• Haptics has its own card again under Find the cursor, and rows and their dividers have more room, for a tidier settings window.
+
 1.7.0
 • Settings backup: save the settings as a file in Documents\flockswitch and load them again, on this PC or, after copying the file, on another.
 • Shaking to find the cursor: choose how long to shake (0.5 to 2 s) and a key to hold (Ctrl, Alt or Shift), so a brief jiggle no longer brings it up.
