@@ -5,6 +5,7 @@
 // to the parent console instead (see `attach_console`).
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod backup;
 mod config;
 mod device;
 mod edge;
@@ -20,6 +21,7 @@ mod shared;
 mod store;
 mod tray;
 mod update;
+mod window_size;
 
 use anyhow::{bail, Result};
 use config::Config;
@@ -77,6 +79,8 @@ USAGE:
                               set locate.hotkey ctrl+alt+l     its shortcut (none = off)
                               set locate.arrival true          when the mouse arrives from another computer
                               set locate.shake true            when the mouse is shaken
+                              set locate.shake_time 1000       how long it must be shaken (ms, 200-5000)
+                              set locate.shake_key ctrl        only while this key is held (none, ctrl, alt, shift)
                               set check_updates true           look for a new version at start and daily
                               set auto_update true             install it by itself and start again
     flockswitch help

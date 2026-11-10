@@ -1,8 +1,8 @@
-# Microsoft Store 목록 개편안 (1.6.0)
+# Microsoft Store 목록 개편안 (1.7.0)
 
 작성: 2026-11-10 · 대상: Partner Center → Flockswitch(9NN9ZLHLGSKN) → Store listings (ko-KR, en-US)
-기준 화면: Windows 1.6.0. 설명은 1.6.0 화면의 메뉴·탭·문구와 기본값을 그대로 따릅니다(코드로 확인).
-적용: 1.6.0 패키지, 새 설명, 새 스크린샷을 한 제출로 올립니다.
+기준 화면: Windows 1.7.0. 설명은 1.7.0 화면의 메뉴·탭·문구와 기본값을 그대로 따릅니다(코드로 확인).
+적용: 1.7.0 패키지, 새 설명, 새 스크린샷을 한 제출로 올립니다.
 
 ---
 
@@ -31,7 +31,7 @@
 | 시작 방법 | "모든 컴퓨터에 설치하세요" 한 줄 | 6단계 설정 순서 |
 | 문제 해결 | 없음 | 자주 겪는 4가지 |
 | 제품 기능(Product features) | 없음 | 14개 항목 |
-| 이번 버전의 새로운 기능 | 없음 | 1.6.0 변경 사항 |
+| 이번 버전의 새로운 기능 | 없음 | 1.7.0·1.6.0 변경 사항 |
 | 스크린샷 | 작은 설정 창 3장, 1.0 화면 | 6장 구성안과 캡션 |
 
 ## 2. 현재 목록의 문제점
@@ -102,7 +102,7 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
 • 버튼별 설정: 휠 모드, 제스처, 휠 클릭, 단축키, 모서리의 다섯 칸이 있습니다.
 • 휠 모드 · 휠 클릭: 버튼을 켜고 "이동할 채널"을 고릅니다. 이 컴퓨터의 채널은 잠겨 있어 고를 수 없습니다. 휠 클릭을 켜면 휠을 눌렀을 때 원래 동작 대신 전환만 합니다.
 • 제스처: "누르기", 그리고 누른 채 위·아래·왼쪽·오른쪽으로 움직였다 떼기. 다섯 동작에 각각 채널을 정합니다. 방향을 하나라도 켜면 버튼을 누르는 동안 커서가 멈춥니다.
-• 단축키: 채널마다 키보드 단축키 하나(기본 Ctrl+Alt+1/2/3). "바꾸기"로 원하는 조합을 누르고 "지우기"로 없앱니다. 어떤 키보드로 눌러도 됩니다.
+• 단축키: 채널마다 키보드 단축키 하나(기본 Ctrl+Alt+1/2/3). "바꾸기"로 원하는 조합을 누르고 "지우기"로 없앱니다. 어떤 키보드로 눌러도 됩니다. 제목 옆 ⓘ에 마우스를 올리면 쓸 수 있는 조합(Ctrl이나 Alt와 글자·숫자, 또는 F키)과 쓸 수 없는 조합(Windows 키 조합, 다른 앱이 이미 쓰는 조합 등)을 알려 줍니다.
 • 모서리: 위·아래·왼쪽·오른쪽 가장자리마다 그쪽에 있는 컴퓨터의 채널을 정합니다.
   - 머무는 시간: 0.3초, 0.5초, 1초, 2초 중에서 고릅니다.
   - Ctrl 키를 누른 동안에만 전환: 실수로 넘어가는 것을 막습니다.
@@ -115,11 +115,12 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
 
 [설정 → 일반 탭]
 • 시작하기 전에: Logi Options+ 설정 안내
-• 마우스 찾기: 커서 위치를 펄스 링, 레이더, 스포트라이트, 랜덤 효과로 강조합니다. 단축키로 표시(기본 Ctrl+Alt+L), 다른 컴퓨터에서 마우스가 도착했을 때, 마우스를 빠르게 흔들었을 때 중에서 고릅니다. 색상과 크기도 정합니다.
+• 마우스 찾기: 커서 위치를 펄스 링, 레이더, 스포트라이트, 랜덤 효과로 강조합니다. 단축키로 표시(기본 Ctrl+Alt+L), 다른 컴퓨터에서 마우스가 도착했을 때, 마우스를 빠르게 흔들었을 때 중에서 고릅니다. 색상과 크기도 정합니다. 흔들기는 얼마나 오래 흔들어야 하는지(0.5·1·1.5·2초)와 흔드는 동안 누르고 있을 키(없음·Ctrl·Alt·Shift)를 정할 수 있어, 평소 마우스를 움직일 때 잘못 뜨지 않습니다.
 • 진동: 진동 모터가 있는 마우스(현재 MX Master 4)용. 요약을 보고 "진동 설정…"으로 자세히 정합니다.
 • 언어(한국어/English), 로그인 시 자동 실행(시작 프로그램 설정 열기)
-• 업데이트: 현재 버전, 지금 확인 / 지금 업데이트, Store 페이지. "자동으로 새 버전 확인"(시작할 때와 하루에 한 번)과 "새 버전 자동 설치"를 각각 켜고 끌 수 있습니다. 자동 설치는 Microsoft Store에서 새 버전을 백그라운드로 받아 설치하고, 그동안 flockswitch가 잠시 닫혔다가 다시 켜집니다.
-• 로그 보기, 설정 초기화…, flockswitch 제거…
+• 업데이트: 현재 버전, 지금 확인 / 지금 업데이트, Store 페이지. 지금 확인으로 새 버전을 찾으면 "지금 업데이트"로 Microsoft Store에서 바로 받아 설치합니다. "자동으로 새 버전 확인"(시작할 때와 하루에 한 번)과 "새 버전 자동 설치"를 각각 켜고 끌 수 있습니다. 설치하는 동안 flockswitch가 잠시 닫혔다가 다시 켜집니다.
+• 설정 백업: "설정 저장"은 지금 설정을 문서\flockswitch 폴더에 파일로 저장하고, "설정 불러오기…"는 그 폴더의 파일을 골라 확인을 거쳐 불러옵니다. "폴더 열기"로 폴더를 열어 파일을 다른 PC로 옮길 수 있습니다. 채널은 PC마다 다르므로 다른 PC에서 불러온 뒤에는 채널을 확인하세요.
+• 설정 초기화…, flockswitch 제거…
 
 [진동 설정 창]
 • 진동 사용, 진동 세기(Options+ 설정 따르기, 25~100%)
@@ -164,14 +165,17 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
+1.7.0
+• 설정 백업: 설정을 문서\flockswitch 폴더에 파일로 저장하고 불러옵니다. 파일을 옮겨 다른 PC에서도 같은 설정을 쓸 수 있습니다.
+• 마우스 찾기의 흔들기: 흔드는 시간(0.5~2초)과 함께 누를 키(Ctrl·Alt·Shift)를 정할 수 있어, 잠깐 흔들린 것으로는 뜨지 않습니다.
+• 단축키 옆 ⓘ: Windows에서 쓸 수 있는 조합과 쓸 수 없는 조합을 알려 줍니다.
+• 배율이 다른 모니터로 설정 창을 옮겨도 창 크기가 그대로 유지됩니다.
+• 지금 확인으로 새 버전을 찾으면 지금 업데이트로 바로 설치하고, 실패하면 이유를 보여 줍니다.
+• 로그 보기 버튼을 뺐습니다.
+
 1.6.0
 • 자동 업데이트: 설정 → 일반 → 업데이트에서 새 버전을 확인하고, 자동 설치를 켜 두면 Microsoft Store에서 백그라운드로 받아 설치합니다. 자동 확인과 자동 설치는 각각 켜고 끌 수 있습니다.
 • 진동 설정 창의 '느껴보기' 버튼 이름을 '진동 확인'으로 바꿨습니다.
-
-1.5.0
-• 진동 설정을 상황별로 정리: 마우스가 떠날 때, 돌아왔을 때, 모서리에서 기다리는 동안을 각각 한 줄에서 켜고 진동을 고릅니다.
-• 진동 확인: 고른 진동을 고른 세기로 마우스에서 바로 울려 봅니다.
-• 랜덤 진동과 효과 크기(75~150%), 더 정돈된 설정 창.
 ```
 
 ### 4-4. 제품 기능 (Product features, 항목당 200자 이내)
@@ -185,7 +189,8 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 모서리 대기 효과 8종과 랜덤, 색상·크기 선택
 Ctrl을 누른 동안에만 모서리 전환하는 옵션
 Logi Bolt·Unifying·블루투스 장치를 섞어서 함께 이동
-마우스 찾기: 단축키·도착·흔들기로 커서 강조
+마우스 찾기: 단축키·도착·흔들기로 커서 강조(흔드는 시간·함께 누를 키 선택)
+설정 백업: 파일로 저장하고 다른 PC에서 불러오기
 MX Master 4 진동: 떠날 때·돌아왔을 때·모서리 대기, 진동 확인
 컴퓨터끼리 네트워크 연결 없이 동작
 Microsoft Store 자동 업데이트(켜고 끌 수 있음)
@@ -243,7 +248,7 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 • Per button: five pages — Wheel mode, Gesture, Wheel click, Shortcuts and Edges.
 • Wheel mode and Wheel click: turn the button on and choose "Go to channel". This computer's own channel is locked so you can't pick it. With Wheel click on, pressing the wheel switches instead of doing its usual job.
 • Gesture: "Press", and hold-and-move up, down, left or right, then release. Each of the five has its own channel. With any direction on, the cursor stays still while the button is held.
-• Shortcuts: one keyboard shortcut per channel (Ctrl+Alt+1/2/3 by default). "Change" records a new combination, "Clear" removes it. Any keyboard works.
+• Shortcuts: one keyboard shortcut per channel (Ctrl+Alt+1/2/3 by default). "Change" records a new combination, "Clear" removes it. Any keyboard works. Hover the ⓘ beside the title to see which combinations work (Ctrl or Alt with a letter or number, or an F key) and which do not (Windows key combinations, ones another app already uses and so on).
 • Edges: give the top, bottom, left and right edges the channel of the computer on that side.
   - Time at edge: 0.3, 0.5, 1 or 2 s.
   - Only while Ctrl is held: stops accidental switches.
@@ -256,11 +261,12 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 
 [Settings → General tab]
 • Before you start: a note on Logi Options+.
-• Find the cursor: highlight the cursor with a pulse ring, radar, spotlight or random effect. It can show with a shortcut (Ctrl+Alt+L by default), on arrival from another computer, or when you shake the mouse, in the colour and size you choose.
+• Find the cursor: highlight the cursor with a pulse ring, radar, spotlight or random effect. It can show with a shortcut (Ctrl+Alt+L by default), on arrival from another computer, or when you shake the mouse, in the colour and size you choose. For shaking, choose how long it must go on (0.5, 1, 1.5 or 2 s) and a key to hold while shaking (none, Ctrl, Alt or Shift), so ordinary mouse movement does not bring it up.
 • Haptics: for a mouse with a haptic motor (currently the MX Master 4). A summary, and "Haptics Settings…" for the details.
 • Language (Korean / English), Start at login (opens the startup settings).
-• Updates: the version, Check now / Update now, and the Store page. "Check for new versions automatically" (at start and once a day) and "Install new versions automatically" each switch on and off. Automatic install gets the new version from the Microsoft Store in the background; flockswitch closes for a moment and starts again.
-• Show log, Reset settings…, Uninstall flockswitch…
+• Updates: the version, Check now / Update now, and the Store page. When Check now finds a new version, "Update now" gets it from the Microsoft Store and installs it right away. "Check for new versions automatically" (at start and once a day) and "Install new versions automatically" each switch on and off. While it installs, flockswitch closes for a moment and starts again.
+• Settings backup: "Save" writes the current settings as a file into Documents\flockswitch, and "Load…" picks a file there and, once you confirm, loads it. "Open folder" opens the folder, so files can be taken to another PC. Channels differ from PC to PC, so check them after loading on another PC.
+• Reset settings…, Uninstall flockswitch…
 
 [Haptics Settings window]
 • Use haptics, and Strength (as set in Options+, or 25 to 100%).
@@ -305,14 +311,17 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 ### 5-3. What's new in this version
 
 ```
+1.7.0
+• Settings backup: save the settings as a file in Documents\flockswitch and load them again, on this PC or, after copying the file, on another.
+• Shaking to find the cursor: choose how long to shake (0.5 to 2 s) and a key to hold (Ctrl, Alt or Shift), so a brief jiggle no longer brings it up.
+• An ⓘ beside the shortcuts tells which combinations Windows allows and which it does not.
+• The settings window keeps its size when moved to a monitor with other scaling.
+• When Check now finds a new version, Update now installs it at once, and says why if it cannot.
+• The Show log button is gone.
+
 1.6.0
 • Automatic updates: Settings → General → Updates looks for a new version, and with automatic install on, gets it from the Microsoft Store in the background. Checking and installing each switch on and off.
 • The haptics window's 'Feel' button is now called 'Test'.
-
-1.5.0
-• Haptics by situation: as the mouse leaves, when it is back and while it waits at an edge each have one line with their own switch and pulse.
-• Test: play the chosen pulse on the mouse at the chosen strength.
-• Random pulse, effect size (75 to 150%) and a tidier settings window.
 ```
 
 ### 5-4. Product features
@@ -326,7 +335,8 @@ Rest the cursor on a screen edge to move to the computer on that side
 Eight edge countdown effects plus random, in your colour and size
 Option to switch at an edge only while Ctrl is held
 Mix Logi Bolt, Unifying and Bluetooth devices in one group
-Find the cursor from a shortcut, on arrival or by shaking the mouse
+Find the cursor from a shortcut, on arrival or by shaking the mouse (how long, and a key to hold)
+Settings backup: save to a file and load it on another PC
 MX Master 4 haptics as the mouse leaves, comes back and waits, with Test
 No network needed between the computers
 Automatic updates from the Microsoft Store (can be turned off)
@@ -363,7 +373,7 @@ mouse switch, keyboard switch, multi computer, KVM, multi PC, channel switch, ed
 ## 7. 적용 순서 (이미지 교체 요청을 받으면)
 
 1. Partner Center에서 이전 제출이 게시됐는지 확인합니다.
-2. **Start update**로 새 제출을 만들고, 패키지에 1.6.0 MSIX를 올립니다.
+2. **Start update**로 새 제출을 만들고, 패키지에 1.7.0 MSIX를 올립니다.
 3. Store listings → **한국어**:
    - 4-1~4-4를 붙여 넣습니다.
    - 기존 스크린샷을 지우고 새 스크린샷과 6번의 캡션을 넣습니다.

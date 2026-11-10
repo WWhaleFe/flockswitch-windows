@@ -330,6 +330,58 @@ impl LocateStyle {
     }
 }
 
+/// A key that must be held while the mouse is shaken, for the shake to count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShakeKey {
+    #[default]
+    None,
+    Ctrl,
+    Alt,
+    Shift,
+}
+
+/// The shake times the settings window offers, in milliseconds.
+pub const SHAKE_TIMES: [u64; 4] = [500, 1000, 1500, 2000];
+
+impl ShakeKey {
+    /// Name in the settings file and on the command line.
+    pub fn name(self) -> &'static str {
+        match self {
+            ShakeKey::None => "none",
+            ShakeKey::Ctrl => "ctrl",
+            ShakeKey::Alt => "alt",
+            ShakeKey::Shift => "shift",
+        }
+    }
+
+    /// Also takes the names other systems use for the same key ("control", "option").
+    pub fn from_name(name: &str) -> Option<ShakeKey> {
+        match name.trim().to_lowercase().as_str() {
+            "none" | "" => Some(ShakeKey::None),
+            "ctrl" | "control" => Some(ShakeKey::Ctrl),
+            "alt" | "option" => Some(ShakeKey::Alt),
+            "shift" => Some(ShakeKey::Shift),
+            // The macOS version offers ⌘; Windows has no key for a shake there.
+            "cmd" | "command" | "super" | "meta" | "win" => Some(ShakeKey::None),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for ShakeKey {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.name())
+    }
+}
+
+/// A key this version does not know (say, one only another system has) reads as none
+/// instead of making the whole settings file unreadable.
+impl<'de> Deserialize<'de> for ShakeKey {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<ShakeKey, D::Error> {
+        Ok(ShakeKey::from_name(&String::deserialize(d)?).unwrap_or_default())
+    }
+}
+
 /// Showing where the cursor is with a short highlight around it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -343,6 +395,10 @@ pub struct Locate {
     pub on_arrival: bool,
     /// Shown when the mouse is shaken from side to side.
     pub on_shake: bool,
+    /// How long (ms) the shaking must go on, back and forth without a break.
+    pub shake_time_ms: u64,
+    /// A key that must be held while shaking; none for any shake.
+    pub shake_key: ShakeKey,
     pub style: LocateStyle,
     /// "#RRGGBB".
     pub color: String,
@@ -358,6 +414,8 @@ impl Default for Locate {
             hotkey: "ctrl+alt+l".into(),
             on_arrival: true,
             on_shake: false,
+            shake_time_ms: 1000,
+            shake_key: ShakeKey::None,
             style: LocateStyle::default(),
             color: DEFAULT_EFFECT_COLOR.into(),
             size: 100,
@@ -799,6 +857,21 @@ impl Config {
                 "on" => self.locate.on = flag()?,
                 "arrival" => self.locate.on_arrival = flag()?,
                 "shake" => self.locate.on_shake = flag()?,
+                "shake_time" | "shake_time_ms" => {
+                    let ms: u64 = value.trim().trim_end_matches("ms").trim().parse().context("locate.shake_time must be milliseconds, e.g. 1000")?;
+                    anyhow::ensure!((200..=5000).contains(&ms), "locate.shake_time must be between 200 and 5000 ms");
+                    self.locate.shake_time_ms = ms;
+                }
+                "shake_key" => {
+                    // Strict here, unlike reading a file: only keys Windows has.
+                    self.locate.shake_key = match value.trim().to_lowercase().as_str() {
+                        "none" => ShakeKey::None,
+                        "ctrl" | "control" => ShakeKey::Ctrl,
+                        "alt" => ShakeKey::Alt,
+                        "shift" => ShakeKey::Shift,
+                        _ => anyhow::bail!("locate.shake_key must be none, ctrl, alt or shift"),
+                    };
+                }
                 "shortcut" => self.locate.on_hotkey = flag()?,
                 "color" => self.locate.color = value.trim().to_uppercase(),
                 "size" => self.locate.size = percent(value).context("locate.size must be a percentage, e.g. 125")?,
@@ -815,7 +888,7 @@ impl Config {
                         _ => anyhow::bail!("locate.style must be ring, radar, spotlight or random"),
                     };
                 }
-                _ => anyhow::bail!("unknown setting '{key}' (locate, locate.style, locate.color, locate.size, locate.hotkey, locate.shortcut, locate.arrival, locate.shake)"),
+                _ => anyhow::bail!("unknown setting '{key}' (locate, locate.style, locate.color, locate.size, locate.hotkey, locate.shortcut, locate.arrival, locate.shake, locate.shake_time, locate.shake_key)"),
             }
             return Ok(());
         }
@@ -929,6 +1002,8 @@ impl Config {
         anyhow::ensure!(self.edges.corner_margin <= 1000, "edge.corner must be at most 1000 pixels");
         anyhow::ensure!(parse_color(&self.edges.anim_color).is_some(), "edge.anim_color must be a colour like #FFCC00");
         anyhow::ensure!(parse_color(&self.locate.color).is_some(), "locate.color must be a colour like #FFCC00");
+        // Lenient: a file with a time outside what the window offers still loads.
+        anyhow::ensure!((100..=10_000).contains(&self.locate.shake_time_ms), "locate.shake_time must be between 200 and 5000 ms");
         for (key, size) in [("edge.anim_size", self.edges.anim_size), ("locate.size", self.locate.size)] {
             anyhow::ensure!(EFFECT_SIZES.contains(&size) || (50..=200).contains(&size), "{key} must be between 50 and 200 percent");
         }
@@ -1309,6 +1384,14 @@ mod tests {
         assert!(c.set("locate.bogus", "1").is_err());
         c.set("locate.hotkey", "none").unwrap();
         assert_eq!(c.locate.hotkey, "");
+        assert_eq!((c.locate.shake_time_ms, c.locate.shake_key), (1000, ShakeKey::None));
+        c.set("locate.shake_time", "1500").unwrap();
+        c.set("locate.shake_key", "Shift").unwrap();
+        assert_eq!((c.locate.shake_time_ms, c.locate.shake_key), (1500, ShakeKey::Shift));
+        assert!(c.set("locate.shake_time", "50").is_err());
+        assert!(c.set("locate.shake_time", "fast").is_err());
+        assert!(c.set("locate.shake_key", "win").is_err());
+        assert!(toml::to_string_pretty(&c).unwrap().contains("shake_key = \"shift\""));
         let back = Config::parse(&toml::to_string_pretty(&c).unwrap()).unwrap();
         assert_eq!(back.locate, c.locate);
         assert_eq!(Config::parse("enabled = true").unwrap().locate, Locate::default());

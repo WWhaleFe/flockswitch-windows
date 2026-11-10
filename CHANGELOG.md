@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0 — 2026-11-10
+
+- **Settings backup** (Settings → General): **Save** writes the settings as `flockswitch-settings-<computer>-<date-time>.toml` into Documents\flockswitch, **Load…** lists the files there, newest first, and after you confirm loads the one chosen (a file that is not a flockswitch settings file, or has a value this version cannot use, is refused with the reason), and **Open folder** opens that folder in Explorer. A file saved by the macOS or Linux version loads too: settings Windows does not have are passed over, and a shortcut Windows cannot use (one with ⌘) is left empty. Channels are set per computer, so check them after loading on another computer
+- Find the cursor by shaking: it now takes shaking back and forth without a break for a time you choose, **0.5 / 1 / 1.5 / 2 s** (`set locate.shake_time 1000`, the default), and optionally only while **Ctrl**, **Alt** or **Shift** is held (`set locate.shake_key ctrl`). A brief jiggle or ordinary movement no longer brings it up
+- Shortcuts: a round ⓘ beside the shortcut settings (Switching → Shortcuts, and the find-the-cursor shortcut) tells which combinations Windows allows (Ctrl or Alt, with or without Shift, plus a letter or number; an F key alone or with modifiers) and which it does not (Windows key combinations, ones another app has registered; Ctrl+Alt may type characters on some layouts). The rule under the shortcuts moved into it
+- Settings window: moved to a monitor with other scaling, it keeps its size instead of growing far too large (its size limits were kept in the first monitor's pixels); the haptics window keeps its size too
+- Updates: **Check now** that finds a new version offers **Update now**, which installs it in the background (through the Microsoft Store for the Store version, from GitHub otherwise), whatever the automatic switches say. A new version the tray app already found is offered at once, and a failed check or install says why. The explanation moved into an ⓘ beside the title
+- General tab: haptics is a row in the card with the language and start at login, so the tab still fits the window. **Show log** is gone (the log is still written)
+
 ## 1.6.0 — 2026-11-10
 
 - **Automatic updates**: Settings → General → **Updates** shows the version, has **Check now** / **Update now**, and two switches, **Check for new versions automatically** (at start and once a day) and **Install new versions automatically** (`set check_updates`, `set auto_update`). The tray menu offers a new version too
