@@ -102,6 +102,21 @@ impl SizeKeeper {
     }
 }
 
+/// The inner height a window `height` tall should grow to so that `overflow` more points
+/// of its page show, at most `cap`; None when it should stay as it is: everything shows,
+/// it cannot grow, or that height (or more) was already asked for (`asked`), so it is
+/// asked for once rather than every frame. Never smaller than it is.
+pub fn grown_height(height: f32, overflow: f32, cap: f32, asked: Option<f32>) -> Option<f32> {
+    if overflow <= 1.0 {
+        return None;
+    }
+    let want = (height + overflow.ceil() + 2.0).min(cap);
+    if want <= height + 1.0 || asked.is_some_and(|h| h >= want - 1.0) {
+        return None;
+    }
+    Some(want)
+}
+
 fn close(a: Size, b: Size) -> bool {
     (a[0] - b[0]).abs() <= TOLERANCE && (a[1] - b[1]).abs() <= TOLERANCE
 }
@@ -164,6 +179,31 @@ mod tests {
         // Then the size it ended at is accepted as it is.
         assert_eq!(k.step(1.5, [1000.0, 1000.0]), None);
         assert!(!k.busy());
+    }
+
+    #[test]
+    fn grows_once_to_fit_the_page_within_the_screen() {
+        // Everything shows: nothing to do.
+        assert_eq!(grown_height(1020.0, 0.0, 1200.0, None), None);
+        assert_eq!(grown_height(1020.0, -300.0, 1200.0, None), None);
+        // 60.4 points hidden: that much taller, with a little room.
+        assert_eq!(grown_height(1020.0, 60.4, 1200.0, None), Some(1083.0));
+        // Asked for already: not again on the next frames, nor for less.
+        assert_eq!(grown_height(1020.0, 60.4, 1200.0, Some(1083.0)), None);
+        assert_eq!(grown_height(1020.0, 30.0, 1200.0, Some(1083.0)), None);
+        // The page got longer still: once more.
+        assert_eq!(grown_height(1083.0, 50.0, 1200.0, Some(1083.0)), Some(1135.0));
+        // No taller than the screen allows, and nothing once there.
+        assert_eq!(grown_height(1020.0, 400.0, 1200.0, None), Some(1200.0));
+        assert_eq!(grown_height(1200.0, 220.0, 1200.0, Some(1200.0)), None);
+        assert_eq!(grown_height(1200.0, 220.0, 1200.0, None), None);
+        // A window the user made taller than the cap is never shrunk.
+        assert_eq!(grown_height(1250.0, 40.0, 1200.0, None), None);
+        // The grown size is within the limits, so the keeper takes it as the good size.
+        let mut k = SizeKeeper::new(MIN, [1200.0, 1300.0]);
+        assert_eq!(k.step(1.25, [840.0, 1020.0]), None);
+        assert_eq!(k.step(1.25, [840.0, 1135.0]), None);
+        assert_eq!(k.step(1.0, [840.0, 1135.0]), Some(Fix { limits: true, size: [840.0, 1135.0] }));
     }
 
     #[test]

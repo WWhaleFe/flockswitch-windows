@@ -36,6 +36,13 @@ const KNOWN_KEYS: &[&str] = &[
 /// A settings file is a few kilobytes; anything far larger is not one.
 const MAX_SIZE: u64 = 1024 * 1024;
 
+/// At most this many .toml files are kept in the folder: at this many, Save writes
+/// nothing until some are renamed away or deleted in Manage.
+pub const MAX_BACKUPS: usize = 10;
+
+/// Longest name (without .toml) a backup can be renamed to, in characters.
+pub const MAX_NAME: usize = 60;
+
 /// Documents\flockswitch.
 pub fn folder() -> PathBuf {
     dirs::document_dir()
@@ -50,6 +57,21 @@ pub struct Backup {
     pub path: PathBuf,
     pub name: String,
     pub modified: Option<SystemTime>,
+}
+
+impl Backup {
+    /// The name without ".toml", as the list shows it.
+    pub fn stem(&self) -> &str {
+        strip_toml(&self.name)
+    }
+}
+
+fn strip_toml(name: &str) -> &str {
+    let cut = name.len().saturating_sub(5);
+    match name.get(cut..) {
+        Some(ext) if ext.eq_ignore_ascii_case(".toml") => &name[..cut],
+        _ => name,
+    }
 }
 
 /// A moment in local time.
@@ -81,6 +103,39 @@ impl Stamp {
             let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
             Stamp::from_unix(secs)
         }
+    }
+
+    /// When a file was last changed, in this computer's time zone.
+    pub fn local(time: SystemTime) -> Stamp {
+        let secs = time.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let utc = Stamp::from_unix(secs);
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::Foundation::SYSTEMTIME;
+            use windows_sys::Win32::System::Time::SystemTimeToTzSpecificLocalTime;
+            let from = SYSTEMTIME {
+                wYear: utc.year,
+                wMonth: utc.month.into(),
+                wDayOfWeek: 0,
+                wDay: utc.day.into(),
+                wHour: utc.hour.into(),
+                wMinute: utc.minute.into(),
+                wSecond: utc.second.into(),
+                wMilliseconds: 0,
+            };
+            // Safety: plain structs; a null time zone means the current one.
+            let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
+            if unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &from, &mut t) } != 0 {
+                let SYSTEMTIME { wYear, wMonth, wDay, wHour, wMinute, wSecond, .. } = t;
+                return Stamp { year: wYear, month: wMonth as u8, day: wDay as u8, hour: wHour as u8, minute: wMinute as u8, second: wSecond as u8 };
+            }
+        }
+        utc
+    }
+
+    /// 2026-11-10 14:03.
+    pub fn short(&self) -> String {
+        format!("{:04}-{:02}-{:02} {:02}:{:02}", self.year, self.month, self.day, self.hour, self.minute)
     }
 
     /// A time in seconds since 1970 (UTC), as a date and time.
@@ -153,15 +208,180 @@ pub fn to_text(cfg: &Config, computer: &str, stamp: &Stamp) -> Result<String> {
     ))
 }
 
-/// Writes the settings into the folder; returns the new file.
-pub fn save(cfg: &Config) -> Result<PathBuf> {
-    let dir = folder();
-    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let (computer, stamp) = (computer_name(), Stamp::now());
-    let path = dir.join(file_name(&computer, &stamp));
-    std::fs::write(&path, to_text(cfg, &computer, &stamp)?).with_context(|| format!("cannot write {}", path.display()))?;
-    log::info!("settings saved to {}", path.display());
-    Ok(path)
+/// What Save did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Saved {
+    /// The new file.
+    File(PathBuf),
+    /// Nothing: the folder already holds `MAX_BACKUPS` files.
+    Full,
+}
+
+/// Writes the settings into the folder, unless it is full.
+pub fn save(cfg: &Config) -> Result<Saved> {
+    save_in(&folder(), cfg, &computer_name(), &Stamp::now())
+}
+
+pub fn save_in(dir: &Path, cfg: &Config, computer: &str, stamp: &Stamp) -> Result<Saved> {
+    if list_in(dir).len() >= MAX_BACKUPS {
+        return Ok(Saved::Full);
+    }
+    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    let text = to_text(cfg, computer, stamp)?;
+    // Never over another file: a second save within the same second gets "-2".
+    let base = file_name(computer, stamp);
+    let stem = strip_toml(&base);
+    let mut n = 1;
+    loop {
+        let name = if n == 1 { base.clone() } else { format!("{stem}-{n}.toml") };
+        let path = dir.join(name);
+        match std::fs::File::options().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(text.as_bytes()).with_context(|| format!("cannot write {}", path.display()))?;
+                log::info!("settings saved to {}", path.display());
+                return Ok(Saved::File(path));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && n < 100 => n += 1,
+            Err(e) => return Err(e).with_context(|| format!("cannot write {}", path.display())),
+        }
+    }
+}
+
+/// Why a name cannot be a backup's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NameError {
+    Empty,
+    TooLong,
+    /// One of / \ : * ? " < > | or a control character.
+    BadChar(char),
+    /// Ends with a dot or a space, which Windows takes off.
+    BadEnd,
+    /// CON, PRN, AUX, NUL, COM0-9, LPT0-9 (with or without an extension): names Windows
+    /// keeps for devices.
+    Reserved,
+    /// Another file in the folder has it.
+    Taken,
+}
+
+/// The file name (with .toml) a backup gets when renamed to `input`; ".toml" typed at the
+/// end is allowed, and spaces around the name are taken off.
+pub fn check_name(input: &str) -> Result<String, NameError> {
+    let stem = strip_toml(input.trim()).trim();
+    if stem.is_empty() {
+        return Err(NameError::Empty);
+    }
+    if stem.chars().count() > MAX_NAME {
+        return Err(NameError::TooLong);
+    }
+    if let Some(c) = stem.chars().find(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') || c.is_control()) {
+        return Err(NameError::BadChar(c));
+    }
+    if stem.ends_with('.') || stem.ends_with(' ') {
+        return Err(NameError::BadEnd);
+    }
+    // "CON" and "con.backup" alike: Windows looks at the part before the first dot.
+    let device = stem.split('.').next().unwrap_or(stem).trim_end().to_ascii_uppercase();
+    let numbered = |prefix: &str| {
+        device.strip_prefix(prefix).is_some_and(|n| matches!(n, "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"))
+    };
+    if ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].contains(&device.as_str()) || numbered("COM") || numbered("LPT") {
+        return Err(NameError::Reserved);
+    }
+    Ok(format!("{stem}.toml"))
+}
+
+/// Gives a backup a new name (`input`, see `check_name`) in the same folder, never over
+/// another file. Returns the new path.
+pub fn rename(path: &Path, input: &str) -> Result<PathBuf, RenameError> {
+    let name = check_name(input).map_err(RenameError::Name)?;
+    let dir = path.parent().unwrap_or(Path::new("."));
+    let target = dir.join(&name);
+    let current = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    if current == name {
+        return Ok(target);
+    }
+    // Only the case changes: the same file on Windows, so not "taken".
+    let same_file = current.eq_ignore_ascii_case(&name);
+    if !same_file && (target.exists() || list_in(dir).iter().any(|b| b.name.eq_ignore_ascii_case(&name))) {
+        return Err(RenameError::Name(NameError::Taken));
+    }
+    std::fs::rename(path, &target).map_err(|e| RenameError::Io(e.to_string()))?;
+    log::info!("settings backup {} renamed to {name}", path.display());
+    Ok(target)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameError {
+    Name(NameError),
+    /// The system's own message.
+    Io(String),
+}
+
+/// What Delete did with a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deleted {
+    RecycleBin,
+    /// The Recycle Bin could not take it: deleted for good.
+    Permanently,
+}
+
+/// Moves a backup to the Recycle Bin; where that does not work, deletes it.
+pub fn delete(path: &Path) -> Result<Deleted> {
+    #[cfg(windows)]
+    match recycle(path) {
+        Recycle::Done => {
+            log::info!("settings backup {} moved to the Recycle Bin", path.display());
+            return Ok(Deleted::RecycleBin);
+        }
+        Recycle::Declined => bail!("not deleted"),
+        Recycle::Failed => {}
+    }
+    std::fs::remove_file(path).with_context(|| format!("cannot delete {}", path.display()))?;
+    log::info!("settings backup {} deleted", path.display());
+    Ok(Deleted::Permanently)
+}
+
+#[cfg(windows)]
+enum Recycle {
+    Done,
+    /// The shell asked before deleting for good, and was told no.
+    Declined,
+    /// The shell could not do it; deleting the file directly may still work.
+    Failed,
+}
+
+/// The shell's delete with undo, as Explorer does it. Where the file cannot be recycled
+/// (no Recycle Bin on that drive, or it is too large for it) the shell asks before
+/// deleting it for good.
+#[cfg(windows)]
+fn recycle(path: &Path) -> Recycle {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{
+        SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FOF_WANTNUKEWARNING, FO_DELETE,
+        SHFILEOPSTRUCTW,
+    };
+    let Ok(full) = std::fs::canonicalize(path) else { return Recycle::Failed };
+    // The shell wants a plain path (no \\?\ prefix), ended by two zeros.
+    let text = full.to_string_lossy();
+    let plain = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    let from: Vec<u16> = std::ffi::OsStr::new(plain).encode_wide().chain([0, 0]).collect();
+    let mut op = SHFILEOPSTRUCTW {
+        wFunc: FO_DELETE,
+        pFrom: from.as_ptr(),
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_WANTNUKEWARNING) as u16,
+        ..Default::default()
+    };
+    // Safety: `from` outlives the call and is double-zero terminated as required.
+    let result = unsafe { SHFileOperationW(&mut op) };
+    if op.fAnyOperationsAborted != 0 {
+        return Recycle::Declined;
+    }
+    if result != 0 || path.exists() {
+        log::info!("recycling {plain}: shell result {result:#x}");
+        return Recycle::Failed;
+    }
+    Recycle::Done
 }
 
 /// The .toml files in the folder, newest first.
@@ -338,6 +558,100 @@ mod tests {
         ] {
             assert!(read(bad).is_err(), "{bad:?} was accepted");
         }
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("flockswitch-backup-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn at_most_ten_are_saved() {
+        let dir = scratch("limit");
+        let cfg = Config::default();
+        let stamp = Stamp { year: 2026, month: 11, day: 10, hour: 9, minute: 5, second: 3 };
+        std::fs::write(dir.join("notes.txt"), "not a backup").unwrap();
+        let mut saved = Vec::new();
+        for _ in 0..MAX_BACKUPS {
+            // The same second every time: the files still never overwrite each other.
+            match save_in(&dir, &cfg, "DESK-1", &stamp).unwrap() {
+                Saved::File(path) => saved.push(path),
+                Saved::Full => panic!("full after {}", saved.len()),
+            }
+        }
+        assert_eq!(list_in(&dir).len(), MAX_BACKUPS);
+        assert!(saved[1].ends_with("flockswitch-settings-DESK-1-20261110-090503-2.toml"), "{:?}", saved[1]);
+        assert_eq!(save_in(&dir, &cfg, "DESK-1", &stamp).unwrap(), Saved::Full);
+        assert_eq!(list_in(&dir).len(), MAX_BACKUPS, "nothing written when full");
+        // One deleted: room for one more.
+        delete(&saved[0]).unwrap();
+        assert!(!saved[0].exists());
+        assert_eq!(list_in(&dir).len(), MAX_BACKUPS - 1);
+        assert!(matches!(save_in(&dir, &cfg, "DESK-1", &stamp).unwrap(), Saved::File(_)));
+        assert_eq!(save_in(&dir, &cfg, "DESK-1", &stamp).unwrap(), Saved::Full);
+        assert!(delete(&dir.join("gone.toml")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn names_a_backup_can_be_given() {
+        assert_eq!(check_name("  my desk  "), Ok("my desk.toml".into()));
+        assert_eq!(check_name("work.toml"), Ok("work.toml".into()));
+        assert_eq!(check_name("work.TOML"), Ok("work.toml".into()));
+        assert_eq!(check_name("집 컴퓨터 v2.1"), Ok("집 컴퓨터 v2.1.toml".into()));
+        assert_eq!(check_name(""), Err(NameError::Empty));
+        assert_eq!(check_name("   "), Err(NameError::Empty));
+        assert_eq!(check_name(".toml"), Err(NameError::Empty));
+        assert_eq!(check_name(&"가".repeat(MAX_NAME)), Ok(format!("{}.toml", "가".repeat(MAX_NAME))));
+        assert_eq!(check_name(&"a".repeat(MAX_NAME + 1)), Err(NameError::TooLong));
+        for c in ['/', '\\', ':', '*', '?', '"', '<', '>', '|', '\t'] {
+            assert_eq!(check_name(&format!("a{c}b")), Err(NameError::BadChar(c)), "{c:?}");
+        }
+        assert_eq!(check_name("trailing."), Err(NameError::BadEnd));
+        for reserved in ["CON", "con", "Nul", "aux", "PRN", "COM1", "com9", "LPT3", "lpt0", "COM¹", "nul.backup", "CON .x", "conout$"] {
+            assert_eq!(check_name(reserved), Err(NameError::Reserved), "{reserved}");
+        }
+        for fine in ["CONSOLE", "COM10", "LPT", "nullable", "my con", "COMA"] {
+            assert!(check_name(fine).is_ok(), "{fine}");
+        }
+    }
+
+    #[test]
+    fn renaming_keeps_toml_and_never_overwrites() {
+        let dir = scratch("rename");
+        let a = dir.join("a.toml");
+        let b = dir.join("b.toml");
+        std::fs::write(&a, "enabled = true\n").unwrap();
+        std::fs::write(&b, "enabled = false\n").unwrap();
+        assert_eq!(rename(&a, "b"), Err(RenameError::Name(NameError::Taken)));
+        assert_eq!(rename(&a, "B.toml"), Err(RenameError::Name(NameError::Taken)), "another file, whatever the case");
+        assert_eq!(rename(&a, "NUL"), Err(RenameError::Name(NameError::Reserved)));
+        assert!(a.exists() && std::fs::read_to_string(&b).unwrap() == "enabled = false\n");
+        let moved = rename(&a, "home office").unwrap();
+        assert_eq!(moved, dir.join("home office.toml"));
+        assert!(moved.exists() && !a.exists());
+        assert_eq!(list_in(&dir).iter().map(|f| f.stem().to_string()).collect::<Vec<_>>().len(), 2);
+        // The same name again, or only its case changed: fine.
+        assert_eq!(rename(&moved, "home office"), Ok(moved.clone()));
+        let cased = rename(&moved, "Home Office").unwrap();
+        assert!(cased.exists());
+        assert!(list_in(&dir).iter().any(|f| f.stem() == "Home Office"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stems_and_dates() {
+        let b = Backup { path: PathBuf::from("x/work.TOML"), name: "work.TOML".into(), modified: None };
+        assert_eq!(b.stem(), "work");
+        assert_eq!(strip_toml("toml"), "toml");
+        assert_eq!(strip_toml("a.toml.toml"), "a.toml");
+        assert_eq!(strip_toml("한.toml"), "한");
+        let t = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_794_301_503);
+        let local = Stamp::local(t);
+        assert_eq!((local.year, local.month), (2026, 11));
+        assert_eq!(Stamp::from_unix(1_794_301_503).short(), "2026-11-10 09:05");
     }
 
     #[test]

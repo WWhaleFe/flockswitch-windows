@@ -3,7 +3,7 @@
 //! engine reloads within a second. Every change applies immediately and the window
 //! stays open, unlike a native menu that closes after each click.
 
-use crate::backup::{self, Backup};
+use crate::backup::{self, Backup, NameError, RenameError, Saved, Stamp, MAX_BACKUPS};
 use crate::config::{
     format_color, parse_color, pick, Config, EFFECT_SIZES, Edge, EdgeAnimDirection, EdgeAnimStyle, Gesture, Haptics, LocateStyle,
     ShakeKey, BUTTON_GESTURE, BUTTON_MIDDLE, BUTTON_WHEEL_MODE, EDGE_ANIM_STYLES, SHAKE_TIMES,
@@ -33,10 +33,14 @@ const EDGES_TAB: u16 = 0xFFFE;
 const ICON_SIDE: u32 = 96;
 const ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/window-icon.rgba"));
 
-/// The settings window's inner size to start with, and its limits, in points.
-const WINDOW_SIZE: [f32; 2] = [840.0, 960.0];
+/// The settings window's inner size to start with, and its limits, in points. Windows'
+/// fonts and scaling make pages taller than on the Mac, so it starts tall, and grows
+/// further (up to the screen) when the page shown needs more (see `grow_to_fit`).
+const WINDOW_SIZE: [f32; 2] = [840.0, 1020.0];
 const WINDOW_MIN: [f32; 2] = [760.0, 640.0];
-const WINDOW_MAX: [f32; 2] = [1200.0, 1100.0];
+const WINDOW_MAX: [f32; 2] = [1200.0, 1300.0];
+/// Room kept between a grown window and the screen's height: the title bar and taskbar.
+const SCREEN_MARGIN: f32 = 120.0;
 
 /// Opens the window. `lock` keeps a second window from opening; a connection to it
 /// means "Settings…" was chosen again, so the window comes back to the front.
@@ -374,8 +378,18 @@ struct SettingsApp {
     window_size: SizeKeeper,
     /// The list of backups to load from, while it is open.
     picker: Option<Picker>,
+    /// The list of backups to rename or delete, while it is open.
+    manager: Option<Manager>,
     /// What the last save or load of a backup did, and whether it worked.
     backup_note: Option<(String, bool)>,
+    /// The last Save found the folder full: the note offers Manage.
+    backup_full: bool,
+    /// How many backups the folder holds, as of the last refresh.
+    backup_count: usize,
+    /// The height last asked for to fit the page, so it is asked for once.
+    grown_to: Option<f32>,
+    /// The window was checked against the screen once at start.
+    fitted_screen: bool,
 }
 
 /// The update look or install started from this window, and why it failed, if it did.
@@ -392,10 +406,40 @@ struct Picker {
     error: Option<String>,
 }
 
+/// The backups to rename or delete, newest first, and what is being done to one row.
+struct Manager {
+    files: Vec<Backup>,
+    /// The row being renamed, the name typed so far, and why it cannot be used.
+    renaming: Option<Renaming>,
+    /// The row whose Delete waits for its confirmation.
+    deleting: Option<usize>,
+    /// What the last rename or delete did, and whether it worked.
+    note: Option<(String, bool)>,
+}
+
+struct Renaming {
+    row: usize,
+    name: String,
+    error: Option<String>,
+    /// The text field takes the keyboard on its first frame.
+    focus: bool,
+}
+
+/// What a row of the manager asked for.
+enum ManageAction {
+    StartRename(usize),
+    ConfirmRename,
+    CancelRename,
+    AskDelete(usize),
+    ConfirmDelete(usize),
+    CancelDelete,
+}
+
 /// Which on-screen effect a colour row sets.
 #[derive(Clone, Copy, PartialEq)]
 enum EffectColor {
-    Edge,
+    /// The countdown effect whose own colour it is.
+    Edge(EdgeAnimStyle),
     Locate,
 }
 
@@ -459,7 +503,12 @@ impl SettingsApp {
             update: Arc::default(),
             window_size: SizeKeeper::new(WINDOW_MIN, WINDOW_MAX),
             picker: None,
+            manager: None,
             backup_note: None,
+            backup_full: false,
+            backup_count: 0,
+            grown_to: None,
+            fitted_screen: false,
         };
         app.refresh();
         app
@@ -475,6 +524,7 @@ impl SettingsApp {
         }
         self.status = shared::load_status_file();
         self.devices = shared::load_catalog();
+        self.backup_count = backup::list().len();
         for d in &mut self.devices {
             d.online = self.status.online.iter().any(|k| k == &d.key);
         }
@@ -565,6 +615,7 @@ impl eframe::App for SettingsApp {
         }
 
         // The header and the tabs stay in place; only the page below them scrolls.
+        let mut overflow = 0.0;
         egui::CentralPanel::default().frame(panel).show(ui, |ui| {
             if modal {
                 ui.disable();
@@ -581,8 +632,9 @@ impl eframe::App for SettingsApp {
                 self.tab = tabs[i].0;
                 self.stop_recording();
             }
-            // The window keeps its size; a page taller than it scrolls.
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            // A page taller than the window makes it grow, up to the screen; beyond that
+            // it scrolls.
+            let scrolled = egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 {
                     if let Some(err) = self.error.clone() {
                         ui.add_space(10.0);
@@ -627,9 +679,44 @@ impl eframe::App for SettingsApp {
                     });
                 }
             });
+            overflow = scrolled.content_size.y - scrolled.inner_rect.height();
         });
+        self.grow_to_fit(&ctx, overflow);
         self.backup_picker(&ctx, t, p);
+        self.backup_manager(&ctx, t, p);
         self.haptics_window(&ctx, t);
+    }
+}
+
+impl SettingsApp {
+    /// Makes the window taller when the page shown does not fit (`overflow` points are
+    /// hidden), up to the screen's height and the largest size; asked for once per
+    /// height, never smaller than the window is. The size reached is then the one the
+    /// SizeKeeper remembers. At start, a window taller than the screen is first brought
+    /// within it.
+    fn grow_to_fit(&mut self, ctx: &egui::Context, overflow: f32) {
+        let (inner, monitor, minimized, maximized) = ctx.input(|i| {
+            let v = i.viewport();
+            (v.inner_rect.map(|r| r.size()), v.monitor_size, v.minimized == Some(true), v.maximized == Some(true))
+        });
+        let (Some(inner), Some(monitor)) = (inner, monitor) else { return };
+        if minimized || maximized || self.window_size.busy() || inner.y < 50.0 || monitor.y < 100.0 {
+            return;
+        }
+        let cap = (monitor.y - SCREEN_MARGIN).clamp(WINDOW_MIN[1], WINDOW_MAX[1]);
+        if !self.fitted_screen {
+            self.fitted_screen = true;
+            if inner.y > cap + 1.0 {
+                log::info!("settings window: {}pt tall on a {}pt screen; now {cap}pt", inner.y, monitor.y);
+                self.grown_to = Some(cap);
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(inner.x, cap)));
+                return;
+            }
+        }
+        let Some(want) = crate::window_size::grown_height(inner.y, overflow, cap, self.grown_to) else { return };
+        log::info!("settings window: {} more points to fit the page; {}pt → {want}pt", overflow.ceil(), inner.y);
+        self.grown_to = Some(want);
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(inner.x, want)));
     }
 }
 
@@ -934,15 +1021,25 @@ impl SettingsApp {
         if preview {
             crate::edge::preview(&self.cfg.edges);
         }
-        if self.cfg.edges.anim_style.can_shrink() {
-            let mut shrink = self.cfg.edges.anim_shrink;
+        let style = self.cfg.edges.anim_style;
+        if style == EdgeAnimStyle::Random {
+            hint(ui, p, t.edge_random_hint);
+            return;
+        }
+        // The chosen effect's own settings; each effect keeps its own.
+        let Some(own) = self.cfg.edges.effect(style).cloned() else { return };
+        if style.can_shrink() {
+            let mut shrink = own.shrink;
             if switch_row(ui, p, t.edge_anim_shrink, None, &mut shrink) {
-                self.apply(|c| c.edges.anim_shrink = shrink);
+                self.apply(|c| {
+                    if let Some(e) = c.edges.effect_mut(style) {
+                        e.shrink = shrink;
+                    }
+                });
             }
         }
-        let shrinks = self.cfg.edges.anim_shrink && self.cfg.edges.anim_style.can_shrink();
-        if self.cfg.edges.anim_style.has_direction() && !shrinks {
-            let labels = if self.cfg.edges.anim_style == EdgeAnimStyle::Bar {
+        if style.has_direction() && !(own.shrink && style.can_shrink()) {
+            let labels = if style == EdgeAnimStyle::Bar {
                 [t.bar_forward, t.bar_reverse, t.bar_both]
             } else {
                 [t.dir_clockwise, t.dir_counter, t.dir_both]
@@ -952,23 +1049,31 @@ impl SettingsApp {
                 (EdgeAnimDirection::CounterClockwise, labels[1]),
                 (EdgeAnimDirection::Both, labels[2]),
             ];
-            let mut direction = self.cfg.edges.anim_direction;
-            if labeled_row(ui, p, t.edge_anim_direction, width, ROW_SMALL, |ui| segmented(ui, p, "edge-anim-dir", &mut direction, &choices, SEG_SMALL)) {
-                self.apply(|c| c.edges.anim_direction = direction);
+            let mut direction = own.direction;
+            let id = format!("edge-anim-dir-{}", style.name());
+            if labeled_row(ui, p, t.edge_anim_direction, width, ROW_SMALL, |ui| segmented(ui, p, &id, &mut direction, &choices, SEG_SMALL)) {
+                self.apply(|c| {
+                    if let Some(e) = c.edges.effect_mut(style) {
+                        e.direction = direction;
+                    }
+                });
             }
         }
-        if self.cfg.edges.anim_style != EdgeAnimStyle::None {
-            self.effect_color_row(ui, t, p, EffectColor::Edge, false);
-            let mut size = self.cfg.edges.anim_size;
-            if size_row(ui, p, t, "edge-size", &mut size) {
-                self.apply(|c| c.edges.anim_size = size);
-            }
+        self.effect_color_row(ui, t, p, EffectColor::Edge(style), false);
+        let mut size = own.size;
+        if size_row(ui, p, t, &format!("edge-size-{}", style.name()), &mut size) {
+            self.apply(|c| {
+                    if let Some(e) = c.edges.effect_mut(style) {
+                        e.size = size;
+                    }
+                });
         }
+        hint(ui, p, t.edge_effect_own_hint);
     }
 
     fn saved_color(&self, slot: EffectColor) -> String {
         match slot {
-            EffectColor::Edge => self.cfg.edges.anim_color.clone(),
+            EffectColor::Edge(style) => self.cfg.edges.effect(style).map(|e| e.color.clone()).unwrap_or_default(),
             EffectColor::Locate => self.cfg.locate.color.clone(),
         }
     }
@@ -976,7 +1081,11 @@ impl SettingsApp {
     fn save_color(&mut self, slot: EffectColor, color: [u8; 3]) {
         let text = format_color(color);
         self.apply(|c| match slot {
-            EffectColor::Edge => c.edges.anim_color = text,
+            EffectColor::Edge(style) => {
+                if let Some(e) = c.edges.effect_mut(style) {
+                    e.color = text;
+                }
+            }
             EffectColor::Locate => c.locate.color = text,
         });
     }
@@ -1584,41 +1693,209 @@ impl SettingsApp {
         });
     }
 
-    /// Saving the settings to a file, loading them from one, and the folder they are in.
+    /// Saving the settings to a file, loading them from one, managing them, and the
+    /// folder they are in, with how many of the allowed number there are.
     fn backup_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        let (mut save, mut load, mut open) = (false, false, false);
+        let mut clicked = [false; 4];
+        let mut manage_from_note = false;
+        let count = self.backup_count;
         section_info(ui, p, t.section_backup, Some(t.backup_help), |ui| {
             ui.add_space(7.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                save = button(ui, p, t.backup_save, ButtonKind::Plain).clicked();
-                load = button(ui, p, t.backup_load, ButtonKind::Plain).clicked();
-                open = button(ui, p, t.backup_open, ButtonKind::Plain).clicked();
-            });
+            let labels = [t.backup_save, t.backup_load, t.backup_manage, t.backup_open];
+            let buttons: f32 = labels.iter().map(|l| button_width(ui, l, ButtonKind::Plain)).sum::<f32>() + 8.0 * 3.0;
+            let count_text = format!("{count}/{MAX_BACKUPS}");
+            let count_color = if count >= MAX_BACKUPS { p.red } else { p.muted };
+            let count_width = ui.painter().layout_no_wrap(count_text.clone(), FontId::proportional(13.0), count_color).size().x;
+            // One row where they fit, else two of two; the count at the right of the first.
+            let rows: &[(usize, usize)] =
+                if buttons + 16.0 + count_width <= ui.available_width() { &[(0, 4)] } else { &[(0, 2), (2, 4)] };
+            for (n, &(first, end)) in rows.iter().enumerate() {
+                if n > 0 {
+                    ui.add_space(6.0);
+                }
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    for i in first..end {
+                        clicked[i] = button(ui, p, labels[i], ButtonKind::Plain).clicked();
+                    }
+                    if n == 0 {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(RichText::new(&count_text).size(13.0).color(count_color));
+                        });
+                    }
+                });
+            }
             ui.add_space(7.0);
             if let Some((note, ok)) = &self.backup_note {
                 ui.label(RichText::new(note).size(12.5).color(if *ok { p.green } else { p.red }));
+                if self.backup_full && !ok {
+                    ui.add_space(2.0);
+                    manage_from_note = ui.link(RichText::new(t.backup_manage_open).size(12.5)).clicked();
+                }
             }
             hint(ui, p, t.backup_hint);
             ui.add_space(8.0);
         });
+        let [save, load, manage, open] = clicked;
         if save {
             // What the file says now, in case the tray menu changed something a moment ago.
             let cfg = Config::load_or_create().unwrap_or_else(|_| self.cfg.clone());
+            self.backup_full = false;
             self.backup_note = Some(match backup::save(&cfg) {
-                Ok(path) => (format!("{} {}", t.backup_saved, path.file_name().unwrap_or_default().to_string_lossy()), true),
+                Ok(Saved::File(path)) => (format!("{} {}", t.backup_saved, path.file_name().unwrap_or_default().to_string_lossy()), true),
+                Ok(Saved::Full) => {
+                    self.backup_full = true;
+                    (t.backup_full.to_string(), false)
+                }
                 Err(e) => (format!("{} {e:#}", t.backup_save_failed), false),
             });
+            self.backup_count = backup::list().len();
         }
         if load {
             self.stop_recording();
             self.picker = Some(Picker { files: backup::list(), chosen: None, error: None });
         }
+        if manage || manage_from_note {
+            self.stop_recording();
+            self.manager = Some(Manager { files: backup::list(), renaming: None, deleting: None, note: None });
+        }
         if open {
             if let Err(e) = backup::open_folder() {
                 self.backup_note = Some((format!("{e:#}"), false));
+                self.backup_full = false;
             }
         }
+    }
+
+    /// The backups in the folder, newest first, in a box over the window like the list to
+    /// load from: each can be renamed (in its row) or deleted (after a second click).
+    fn backup_manager(&mut self, ctx: &egui::Context, t: &Texts, p: Palette) {
+        let Some(mut m) = self.manager.take() else { return };
+        let frame = egui::Frame::new().fill(p.bg).stroke(Stroke::new(1.0, p.border)).corner_radius(14).inner_margin(Margin::same(18));
+        let mut close = false;
+        let mut action = None;
+        let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let modal = egui::Modal::new(egui::Id::unique("backup-manager")).frame(frame).show(ctx, |ui| {
+            ui.set_width(560.0);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(t.backup_manage_title).font(bold(16.0)).color(p.text));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let color = if m.files.len() >= MAX_BACKUPS { p.red } else { p.muted };
+                    ui.label(RichText::new(format!("{}/{MAX_BACKUPS}", m.files.len())).size(13.0).color(color));
+                });
+            });
+            hint(ui, p, t.backup_manage_hint);
+            ui.add_space(10.0);
+            card(ui, p, |ui| {
+                if m.files.is_empty() {
+                    empty(ui, p, t.backup_none);
+                    return;
+                }
+                egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
+                    for i in 0..m.files.len() {
+                        if i > 0 {
+                            divider(ui, p);
+                        }
+                        let file = &m.files[i];
+                        let date = file.modified.map(|time| Stamp::local(time).short()).unwrap_or_default();
+                        if let Some(r) = m.renaming.as_mut().filter(|r| r.row == i) {
+                            match rename_row(ui, p, t, r) {
+                                Some(true) => action = Some(ManageAction::ConfirmRename),
+                                Some(false) => action = Some(ManageAction::CancelRename),
+                                None => {}
+                            }
+                            continue;
+                        }
+                        let confirming = m.deleting == Some(i);
+                        let labels: &[(&str, ButtonKind)] = if confirming {
+                            &[(t.backup_delete_confirm, ButtonKind::DangerFilled), (t.cancel, ButtonKind::Plain)]
+                        } else {
+                            &[(t.backup_rename, ButtonKind::Plain), (t.backup_delete, ButtonKind::Danger)]
+                        };
+                        let asked = match (confirming, file_row(ui, p, file.stem(), &date, labels)) {
+                            (false, Some(0)) => Some(ManageAction::StartRename(i)),
+                            (false, Some(_)) => Some(ManageAction::AskDelete(i)),
+                            (true, Some(0)) => Some(ManageAction::ConfirmDelete(i)),
+                            (true, Some(_)) => Some(ManageAction::CancelDelete),
+                            (_, None) => None,
+                        };
+                        if asked.is_some() {
+                            action = asked;
+                        }
+                    }
+                });
+            });
+            if let Some((note, ok)) = &m.note {
+                ui.add_space(8.0);
+                ui.label(RichText::new(note).size(12.5).color(if *ok { p.green } else { p.red }));
+            }
+            ui.add_space(14.0);
+            let width = button_width(ui, t.close, ButtonKind::Plain);
+            ui.horizontal(|ui| {
+                ui.add_space((ui.available_width() - width).max(0.0));
+                close = button(ui, p, t.close, ButtonKind::Plain).clicked();
+            });
+        });
+        // Esc first takes back a rename or a delete waiting for its confirmation.
+        let busy = m.renaming.is_some() || m.deleting.is_some();
+        if escape && busy {
+            m.renaming = None;
+            m.deleting = None;
+            self.manager = Some(m);
+            return;
+        }
+        if close || modal.should_close() {
+            self.backup_count = backup::list().len();
+            return;
+        }
+        match action {
+            Some(ManageAction::StartRename(i)) => {
+                let name = m.files[i].stem().to_string();
+                m.renaming = Some(Renaming { row: i, name, error: None, focus: true });
+                m.deleting = None;
+            }
+            Some(ManageAction::CancelRename) => m.renaming = None,
+            Some(ManageAction::ConfirmRename) => {
+                if let Some(mut r) = m.renaming.take() {
+                    let file = m.files[r.row].clone();
+                    match backup::rename(&file.path, &r.name) {
+                        Ok(path) => {
+                            let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+                            m.note = Some((format!("{} {name}", t.backup_renamed), true));
+                            m.files = backup::list();
+                        }
+                        Err(e) => {
+                            r.error = Some(rename_error(t, &e));
+                            r.focus = true;
+                            m.renaming = Some(r);
+                        }
+                    }
+                }
+            }
+            Some(ManageAction::AskDelete(i)) => {
+                m.deleting = Some(i);
+                m.renaming = None;
+            }
+            Some(ManageAction::CancelDelete) => m.deleting = None,
+            Some(ManageAction::ConfirmDelete(i)) => {
+                m.deleting = None;
+                let file = m.files[i].clone();
+                m.note = Some(match backup::delete(&file.path) {
+                    Ok(backup::Deleted::RecycleBin) => (format!("{} {}", t.backup_recycled, file.name), true),
+                    Ok(backup::Deleted::Permanently) => (format!("{} {}", t.backup_deleted, file.name), true),
+                    Err(e) => (format!("{} {e:#}", t.backup_delete_failed), false),
+                });
+                m.files = backup::list();
+            }
+            None => {}
+        }
+        self.backup_count = m.files.len();
+        if self.backup_count < MAX_BACKUPS && self.backup_full {
+            self.backup_full = false;
+            self.backup_note = None;
+        }
+        self.manager = Some(m);
     }
 
     /// The backups in the folder, newest first, in a box over the window: choose one,
@@ -1643,8 +1920,9 @@ impl SettingsApp {
                         if i > 0 {
                             divider(ui, p);
                         }
-                        let subtitle = backup::describe(&picker.files[i].name);
-                        let row = Row { title: &picker.files[i].name, subtitle: subtitle.as_deref(), badge: None };
+                        let file = &picker.files[i];
+                        let subtitle = backup::describe(&file.name).or_else(|| file.modified.map(|time| Stamp::local(time).short()));
+                        let row = Row { title: file.stem(), subtitle: subtitle.as_deref(), badge: None };
                         if choice_row(ui, p, Mark::Radio, picker.chosen == Some(i), &row).clicked() {
                             picker.chosen = Some(i);
                             picker.error = None;
@@ -2279,6 +2557,100 @@ fn confirm_row(ui: &mut Ui, p: Palette, explain: &str, labels: &[(&str, ButtonKi
         });
     });
     clicked
+}
+
+/// A file in the backup manager: its name and date on the left, buttons on the right.
+/// Returns the index clicked.
+fn file_row(ui: &mut Ui, p: Palette, name: &str, date: &str, labels: &[(&str, ButtonKind)]) -> Option<usize> {
+    let buttons: f32 = labels.iter().map(|(l, k)| button_width(ui, l, *k)).sum::<f32>() + 8.0 * (labels.len() - 1) as f32;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::hover());
+    // A long name is cut at the buttons; the whole of it shows under the mouse.
+    let text = Rect::from_min_max(rect.min, Pos2::new(rect.right() - buttons - 12.0, rect.max.y));
+    let painter = ui.painter().with_clip_rect(text.intersect(ui.clip_rect()));
+    painter.text(Pos2::new(rect.left(), rect.center().y - 1.0), Align2::LEFT_BOTTOM, name, FontId::proportional(14.5), p.text);
+    painter.text(Pos2::new(rect.left(), rect.center().y + 3.0), Align2::LEFT_TOP, date, FontId::proportional(12.5), p.muted);
+    ui.interact(text, egui::Id::unique(("backup-file", name)), Sense::hover()).on_hover_text(name);
+    let area = Rect::from_min_max(
+        Pos2::new(rect.right() - buttons, rect.center().y - 15.0),
+        Pos2::new(rect.right(), rect.center().y + 15.0),
+    );
+    let mut clicked = None;
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.horizontal(|ui| {
+            for (i, (label, kind)) in labels.iter().enumerate() {
+                if button(ui, p, label, *kind).clicked() {
+                    clicked = Some(i);
+                }
+            }
+        });
+    });
+    clicked
+}
+
+/// A file being renamed: a text field with OK and Cancel, and why the name cannot be
+/// used under it. Some(true) on OK (or Enter), Some(false) on Cancel.
+fn rename_row(ui: &mut Ui, p: Palette, t: &Texts, r: &mut Renaming) -> Option<bool> {
+    let labels = [(t.ok, ButtonKind::Primary), (t.cancel, ButtonKind::Plain)];
+    let buttons: f32 = labels.iter().map(|(l, k)| button_width(ui, l, *k)).sum::<f32>() + 8.0;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::hover());
+    let field = Rect::from_min_max(
+        Pos2::new(rect.left(), rect.center().y - CONTROL_HEIGHT / 2.0),
+        Pos2::new(rect.right() - buttons - 12.0, rect.center().y + CONTROL_HEIGHT / 2.0),
+    );
+    let mut result = None;
+    ui.new_child(UiBuilder::new().max_rect(field)).scope(|ui| {
+        let edit = egui::TextEdit::singleline(&mut r.name)
+            .id(egui::Id::unique("backup-rename"))
+            .desired_width(field.width())
+            .min_size(Vec2::new(field.width(), CONTROL_HEIGHT))
+            .align(Align2::LEFT_CENTER)
+            .font(FontId::proportional(14.0));
+        let resp = ui.add(edit);
+        if r.focus {
+            r.focus = false;
+            resp.request_focus();
+        }
+        if resp.changed() {
+            r.error = None;
+        }
+        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            result = Some(true);
+        }
+    });
+    let area = Rect::from_min_max(
+        Pos2::new(rect.right() - buttons, rect.center().y - 15.0),
+        Pos2::new(rect.right(), rect.center().y + 15.0),
+    );
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.horizontal(|ui| {
+            if button(ui, p, labels[0].0, labels[0].1).clicked() {
+                result = Some(true);
+            }
+            if button(ui, p, labels[1].0, labels[1].1).clicked() {
+                result = Some(false);
+            }
+        });
+    });
+    if let Some(error) = &r.error {
+        ui.label(RichText::new(error).size(12.5).color(p.red));
+        ui.add_space(6.0);
+    }
+    result
+}
+
+/// Why a rename did not happen, in the window's language.
+fn rename_error(t: &Texts, e: &RenameError) -> String {
+    match e {
+        RenameError::Name(NameError::Empty) => t.name_empty.into(),
+        RenameError::Name(NameError::TooLong) => t.name_too_long.into(),
+        RenameError::Name(NameError::BadChar(_)) => t.name_bad_char.into(),
+        RenameError::Name(NameError::BadEnd) => t.name_bad_end.into(),
+        RenameError::Name(NameError::Reserved) => t.name_reserved.into(),
+        RenameError::Name(NameError::Taken) => t.name_taken.into(),
+        RenameError::Io(why) => format!("{} {why}", t.backup_rename_failed),
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]

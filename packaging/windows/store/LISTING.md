@@ -31,7 +31,7 @@
 | 시작 방법 | "모든 컴퓨터에 설치하세요" 한 줄 | 6단계 설정 순서 |
 | 문제 해결 | 없음 | 자주 겪는 4가지 |
 | 제품 기능(Product features) | 없음 | 14개 항목 |
-| 이번 버전의 새로운 기능 | 없음 | 1.7.0·1.6.0 변경 사항 |
+| 이번 버전의 새로운 기능 | 없음 | 1.8.0·1.7.1·1.7.0 변경 사항 |
 | 스크린샷 | 작은 설정 창 3장, 1.0 화면 | 6장 구성안과 캡션 |
 
 ## 2. 현재 목록의 문제점
@@ -107,7 +107,7 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
   - 머무는 시간: 0.3초, 0.5초, 1초, 2초 중에서 고릅니다.
   - Ctrl 키를 누른 동안에만 전환: 실수로 넘어가는 것을 막습니다.
   - 돌아오면 커서를 보냈던 쪽에 놓기
-  - 대기 효과: 링, 반원, 막대, 펄스 파동, 네온 레이저, 파티클 보텍스, 사이버 스캔, 리퀴드, 랜덤 중에서 고릅니다. 색상, 크기(75~150%), 줄어드는 방향도 정하고 "미리 보기"로 확인합니다.
+  - 대기 효과: 링, 반원, 막대, 펄스 파동, 네온 레이저, 파티클 보텍스, 사이버 스캔, 리퀴드, 랜덤 중에서 고릅니다. 효과마다 색상, 크기(75~150%), 줄어드는 방향(링·반원·막대)을 따로 정하고 "미리 보기"로 확인합니다. 랜덤은 매번 효과와 함께 방향과 작아지며 사라지기도 무작위로 고릅니다.
 
 [설정 → 장치 탭]
 • 마스터 마우스: 전환 버튼을 쓸 마우스. 보통은 자동 선택으로 둡니다.
@@ -119,7 +119,7 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
 • 진동: 진동 모터가 있는 마우스(현재 MX Master 4)용. 요약을 보고 "진동 설정…"으로 자세히 정합니다.
 • 언어(한국어/English), 로그인 시 자동 실행(시작 프로그램 설정 열기)
 • 업데이트: 현재 버전, 지금 확인 / 지금 업데이트, Store 페이지. 지금 확인으로 새 버전을 찾으면 "지금 업데이트"로 Microsoft Store에서 바로 받아 설치합니다. "자동으로 새 버전 확인"(시작할 때와 하루에 한 번)과 "새 버전 자동 설치"를 각각 켜고 끌 수 있습니다. 설치하는 동안 flockswitch가 잠시 닫혔다가 다시 켜집니다.
-• 설정 백업: "설정 저장"은 지금 설정을 문서\flockswitch 폴더에 파일로 저장하고, "설정 불러오기…"는 그 폴더의 파일을 골라 확인을 거쳐 불러옵니다. "폴더 열기"로 폴더를 열어 파일을 다른 PC로 옮길 수 있습니다. 채널은 PC마다 다르므로 다른 PC에서 불러온 뒤에는 채널을 확인하세요.
+• 설정 백업: "저장"은 지금 설정을 문서\flockswitch 폴더에 파일로 저장하고(최대 10개, 개수 표시), "불러오기…"는 그 폴더의 파일을 골라 확인을 거쳐 불러옵니다. "관리…"에서 파일 이름을 바꾸거나 휴지통으로 지웁니다. "폴더 열기"로 폴더를 열어 파일을 다른 PC로 옮길 수 있습니다. 채널은 PC마다 다르므로 다른 PC에서 불러온 뒤에는 채널을 확인하세요.
 • 설정 초기화…, flockswitch 제거…
 
 [진동 설정 창]
@@ -165,6 +165,12 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
+1.8.0
+• 모서리 대기 효과마다 색상·크기·방향을 따로 저장합니다. 링을 바꿔도 막대는 그대로입니다.
+• 랜덤은 매번 효과와 함께 줄어드는 방향과 작아지며 사라지기도 무작위로 골라 다양하게 보여 줍니다.
+• 설정 백업: 버튼을 저장·불러오기…·관리…·폴더 열기로 줄이고 저장된 개수(최대 10개)를 보여 줍니다. 관리에서 파일 이름을 바꾸거나 휴지통으로 지웁니다.
+• 설정 창이 더 높게 열리고, 내용이 길면 화면 안에서 한 번 늘어나 일반 탭이 스크롤 없이 보입니다.
+
 1.7.1
 • 진동 설정을 '마우스 찾기' 아래 별도 카드로 옮기고, 설정 창의 줄과 구분선 사이 간격을 넓혀 화면을 정돈했습니다.
 
@@ -175,10 +181,6 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 • 배율이 다른 모니터로 설정 창을 옮겨도 창 크기가 그대로 유지됩니다.
 • 지금 확인으로 새 버전을 찾으면 지금 업데이트로 바로 설치하고, 실패하면 이유를 보여 줍니다.
 • 로그 보기 버튼을 뺐습니다.
-
-1.6.0
-• 자동 업데이트: 설정 → 일반 → 업데이트에서 새 버전을 확인하고, 자동 설치를 켜 두면 Microsoft Store에서 백그라운드로 받아 설치합니다. 자동 확인과 자동 설치는 각각 켜고 끌 수 있습니다.
-• 진동 설정 창의 '느껴보기' 버튼 이름을 '진동 확인'으로 바꿨습니다.
 ```
 
 ### 4-4. 제품 기능 (Product features, 항목당 200자 이내)
@@ -189,11 +191,11 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 제스처 버튼을 누른 채 위·아래·왼쪽·오른쪽으로 채널 선택
 채널마다 키보드 단축키(기본 Ctrl+Alt+1/2/3)
 화면 가장자리에 커서를 대면 그쪽 컴퓨터로 이동
-모서리 대기 효과 8종과 랜덤, 색상·크기 선택
+모서리 대기 효과 8종과 랜덤, 효과마다 색상·크기·방향 선택
 Ctrl을 누른 동안에만 모서리 전환하는 옵션
 Logi Bolt·Unifying·블루투스 장치를 섞어서 함께 이동
 마우스 찾기: 단축키·도착·흔들기로 커서 강조(흔드는 시간·함께 누를 키 선택)
-설정 백업: 파일로 저장하고 다른 PC에서 불러오기
+설정 백업: 파일로 저장(최대 10개)·이름 바꾸기·삭제, 다른 PC에서 불러오기
 MX Master 4 진동: 떠날 때·돌아왔을 때·모서리 대기, 진동 확인
 컴퓨터끼리 네트워크 연결 없이 동작
 Microsoft Store 자동 업데이트(켜고 끌 수 있음)
@@ -256,7 +258,7 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
   - Time at edge: 0.3, 0.5, 1 or 2 s.
   - Only while Ctrl is held: stops accidental switches.
   - On return, put the cursor at that edge.
-  - Countdown: ring, semicircle, bar, pulse wave, neon laser, particle vortex, cyber scan, liquid or random, with its colour, size (75 to 150%) and the way it drains. Check it with "Preview".
+  - Countdown: ring, semicircle, bar, pulse wave, neon laser, particle vortex, cyber scan, liquid or random. Each effect keeps its own colour, size (75 to 150%) and, for the ring, semicircle and bar, the way it drains. Check it with "Preview". Random also picks the direction and shrinking away at random each time.
 
 [Settings → Devices tab]
 • Master mouse: the mouse whose button switches. Usually left on Automatic.
@@ -268,7 +270,7 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 • Haptics: for a mouse with a haptic motor (currently the MX Master 4). A summary, and "Haptics Settings…" for the details.
 • Language (Korean / English), Start at login (opens the startup settings).
 • Updates: the version, Check now / Update now, and the Store page. When Check now finds a new version, "Update now" gets it from the Microsoft Store and installs it right away. "Check for new versions automatically" (at start and once a day) and "Install new versions automatically" each switch on and off. While it installs, flockswitch closes for a moment and starts again.
-• Settings backup: "Save" writes the current settings as a file into Documents\flockswitch, and "Load…" picks a file there and, once you confirm, loads it. "Open folder" opens the folder, so files can be taken to another PC. Channels differ from PC to PC, so check them after loading on another PC.
+• Settings backup: "Save" writes the current settings as a file into Documents\flockswitch (up to 10, with the count shown), and "Load…" picks a file there and, once you confirm, loads it. "Manage…" renames files or deletes them to the Recycle Bin. "Open folder" opens the folder, so files can be taken to another PC. Channels differ from PC to PC, so check them after loading on another PC.
 • Reset settings…, Uninstall flockswitch…
 
 [Haptics Settings window]
@@ -314,6 +316,12 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 ### 5-3. What's new in this version
 
 ```
+1.8.0
+• Each edge countdown effect keeps its own colour, size and direction: changing the ring no longer changes the bar.
+• Random now varies more: each time it also picks the direction and shrinking away at random.
+• Settings backup: shorter buttons (Save, Load…, Manage…, Open folder) and the number saved, up to 10. Manage renames files or deletes them to the Recycle Bin.
+• The settings window opens taller and, when a page is longer, grows once within the screen, so the General tab fits without scrolling.
+
 1.7.1
 • Haptics has its own card again under Find the cursor, and rows and their dividers have more room, for a tidier settings window.
 
@@ -324,10 +332,6 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 • The settings window keeps its size when moved to a monitor with other scaling.
 • When Check now finds a new version, Update now installs it at once, and says why if it cannot.
 • The Show log button is gone.
-
-1.6.0
-• Automatic updates: Settings → General → Updates looks for a new version, and with automatic install on, gets it from the Microsoft Store in the background. Checking and installing each switch on and off.
-• The haptics window's 'Feel' button is now called 'Test'.
 ```
 
 ### 5-4. Product features
@@ -338,11 +342,11 @@ Use the wheel mode-shift button, gesture button or wheel click
 Hold the gesture button and move up, down, left or right to pick a channel
 A keyboard shortcut per channel (Ctrl+Alt+1/2/3 by default)
 Rest the cursor on a screen edge to move to the computer on that side
-Eight edge countdown effects plus random, in your colour and size
+Eight edge countdown effects plus random, each with its own colour, size and direction
 Option to switch at an edge only while Ctrl is held
 Mix Logi Bolt, Unifying and Bluetooth devices in one group
 Find the cursor from a shortcut, on arrival or by shaking the mouse (how long, and a key to hold)
-Settings backup: save to a file and load it on another PC
+Settings backup: save up to 10 files, rename or delete them, load on another PC
 MX Master 4 haptics as the mouse leaves, comes back and waits, with Test
 No network needed between the computers
 Automatic updates from the Microsoft Store (can be turned off)

@@ -45,19 +45,25 @@ fn send(command: Command) {
     }
 }
 
-/// Starts the countdown on `edge` of `display`, `elapsed` into the wait of `duration`.
+/// Starts the countdown on `edge` of `display`, `elapsed` into the wait of `duration`,
+/// drawn as the chosen effect's own settings say (Random picks an effect, and its
+/// options, each time).
 pub fn edge_begin(edges: &Edges, edge: Edge, display: &Rect, elapsed: Duration, duration: Duration, preview: bool) {
+    let Some(look) = edges.look() else {
+        edge_end();
+        return;
+    };
     send(Command::EdgeBegin {
         display: *display,
         edge: edge as i32,
-        style: edges.anim_style.resolved() as i32,
-        direction: edges.anim_direction as i32,
-        shrink: edges.anim_shrink,
+        style: look.style as i32,
+        direction: look.direction as i32,
+        shrink: look.shrink,
         elapsed,
         duration,
         preview,
-        color: components(&edges.anim_color),
-        size: f64::from(edges.anim_size) / 100.0,
+        color: components(&look.color),
+        size: f64::from(look.size) / 100.0,
     });
 }
 

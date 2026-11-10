@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0 — 2026-11-10
+
+- **Each edge countdown effect has its own settings**: ring, semicircle, bar, pulse, laser, vortex, scan and liquid each keep their own colour and size, and the ring, semicircle and bar their own direction (the ring and semicircle also their own shrinking away). Choosing "Both ways" for the ring no longer changes the bar. Switching the effect in Switching → Edges shows that effect's settings, and the preview uses them. On the command line: `set edge.ring.color #FF3B30`, `set edge.bar.size 125`, `set edge.semicircle.direction both`, `set edge.ring.shrink true`; the older `set edge.anim_color` (and `anim_size`, `anim_direction`, `anim_shrink`) changes the chosen effect, or every effect when none or Random is chosen. Settings from earlier versions give every effect the colour, size and direction they had. In the settings file each effect is a `[edges.effects.<name>]` table, the same on macOS and Linux, so backups move between them; the old `anim_*` keys are still written for the chosen effect
+- **Random shows the variety**: each countdown picks an effect with its own colour and size, and also a random direction (ring, semicircle, bar) and a random shrinking away (ring, semicircle). A specifically chosen effect keeps its saved direction and shrinking
+- **Settings backup**: shorter buttons, **Save**, **Load…**, **Manage…** and **Open folder**, and the number of saved files (3/10). At most 10 files are kept in Documents\flockswitch: at 10, Save writes nothing and says so in red, with a link to Manage. **Manage…** lists the files newest first with their date; each can be **renamed** in its row (up to 60 characters, none of / \ : * ? " < > |, no names Windows keeps for devices such as CON or NUL, never over another file; it stays a .toml) or **deleted** after a second click, to the Recycle Bin (the note says when a file had to be deleted for good). The ⓘ explains the limit, managing and copying files to another computer
+- **Settings window**: opens 1020 tall, and when the page shown is taller than the window (on the General tab with every find-the-cursor option on, say) the window grows once to fit, up to the screen's height. It never shrinks a window you made larger, and the size it grows to is kept when the window moves to a monitor with other scaling
+
 ## 1.7.1 — 2026-11-10
 
 - Haptics is back in its own card under Find the cursor in the left column, as on the Mac; in 1.7.0 it sat at the top of the language card and broke the layout
