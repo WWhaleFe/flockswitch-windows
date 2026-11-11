@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.0 — 2026-11-12
+
+- **Less memory while it runs all day**: the notification-area icon no longer keeps a list of its hover and click events that nothing reads and that grew for as long as flockswitch ran. The drawing for the edge countdown and find the cursor starts with the first effect instead of at start-up, the daily look for updates no longer copies the settings every second, and room taken by a burst of mouse reports is given back once they are handled
+- Tidier code: unused code and duplicate helpers are gone. How flockswitch works and looks, its settings file and its commands stay the same, so settings from 1.8.0 load unchanged
+- README: Bluetooth is marked as tested
+
 ## 1.8.0 — 2026-11-10
 
 - **Each edge countdown effect has its own settings**: ring, semicircle, bar, pulse, laser, vortex, scan and liquid each keep their own colour and size, and the ring, semicircle and bar their own direction (the ring and semicircle also their own shrinking away). Choosing "Both ways" for the ring no longer changes the bar. Switching the effect in Switching → Edges shows that effect's settings, and the preview uses them. On the command line: `set edge.ring.color #FF3B30`, `set edge.bar.size 125`, `set edge.semicircle.direction both`, `set edge.ring.shrink true`; the older `set edge.anim_color` (and `anim_size`, `anim_direction`, `anim_shrink`) changes the chosen effect, or every effect when none or Random is chosen. Settings from earlier versions give every effect the colour, size and direction they had. In the settings file each effect is a `[edges.effects.<name>]` table, the same on macOS and Linux, so backups move between them; the old `anim_*` keys are still written for the chosen effect

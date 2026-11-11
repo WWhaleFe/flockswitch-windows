@@ -6,7 +6,7 @@ Press one mouse button and move your Logitech mouse **and** keyboard to another 
 
 flockswitch turns buttons of an MX Master mouse — the wheel mode-shift button, the gesture button and/or the wheel click (pressing the wheel) — into an Easy-Switch key. When you press one, every device in your group (keyboard, other mice) switches to the same Easy-Switch channel, then the mouse follows. It needs no network between the computers, so it works where Logitech Flow cannot (guest/public or locked-down networks).
 
-This repository is the Windows version, prepared for the Microsoft Store. The others live in [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac), [flockswitch-linux](https://github.com/WWhaleFe/flockswitch-linux) and [flockswitch-android](https://github.com/WWhaleFe/flockswitch-android); all of them switch the same way and can be mixed.
+This repository is the Windows version, also in the [Microsoft Store](https://apps.microsoft.com/detail/9NN9ZLHLGSKN). The others live in [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac), [flockswitch-linux](https://github.com/WWhaleFe/flockswitch-linux) and [flockswitch-android](https://github.com/WWhaleFe/flockswitch-android); all of them switch the same way and can be mixed.
 
 > Not affiliated with Logitech. "Logitech", "MX Master", "Easy-Switch", "Bolt" and "Unifying" are trademarks of Logitech.
 
@@ -39,8 +39,6 @@ Get the latest build from [Releases](../../releases).
 - **Portable**: unzip `flockswitch-windows-portable-<version>.zip` to a folder you will keep (start-at-login remembers this location) and run `flockswitch.exe`.
 - If Windows shows "Windows protected your PC", choose **More info → Run anyway**.
 - New versions: the app looks for them and installs them itself (**Settings → General → Updates**, below).
-
-New versions are not downloaded by the app; get them from Releases (or, once listed, the Microsoft Store).
 
 ## Use
 
@@ -78,7 +76,7 @@ flockswitch talks only to the Logitech devices connected to this PC. Its only in
 |---|---|
 | Logi Bolt receiver | tested |
 | Unifying receiver | implemented, untested on Windows |
-| Bluetooth | implemented, untested |
+| Bluetooth | tested |
 
 ## Build
 

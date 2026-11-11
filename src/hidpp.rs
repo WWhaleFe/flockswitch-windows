@@ -18,6 +18,8 @@ pub const DIRECT_INDEX: u8 = 0xFF;
 
 const SHORT_LEN: usize = 7;
 const LONG_LEN: usize = 20;
+/// Room for queued reports that an emptied backlog keeps.
+const BACKLOG_KEPT: usize = 32;
 
 /// USB receivers (devices live in slots 1..=6). Anything else exposing the HID++
 /// collection — e.g. a mouse on a USB cable — is addressed directly at index 0xFF.
@@ -40,9 +42,6 @@ pub struct Endpoint {
     pub product: String,
     /// USB/Bluetooth product ID. For a Bluetooth device this identifies the model.
     pub product_id: u16,
-    /// Stable identity of the endpoint across re-enumerations.
-    #[allow(dead_code)]
-    pub key: String,
     long: HidDevice,
     /// Separate handle for short reports. `None` when the OS exposes short and long
     /// reports on the same handle (macOS) or the endpoint has no short collection.
@@ -110,6 +109,11 @@ impl Endpoint {
     pub fn next_report(&mut self, timeout: Duration) -> Option<Vec<u8>> {
         if let Some(r) = self.backlog.pop_front() {
             return Some(r);
+        }
+        // Mouse movement during a long request can queue thousands of reports; once they
+        // are handled, give that room back instead of keeping it for the rest of the day.
+        if self.backlog.capacity() > BACKLOG_KEPT {
+            self.backlog.shrink_to(BACKLOG_KEPT);
         }
         self.read(timeout)
     }
@@ -249,7 +253,7 @@ pub fn endpoint_keys(api: &HidApi) -> Vec<String> {
 /// Opens every Logitech HID++ endpoint on this machine.
 pub fn discover(api: &HidApi) -> Vec<Endpoint> {
     let mut out = Vec::new();
-    for (key, g) in groups(api) {
+    for g in groups(api).into_values() {
         let (Some(long_path), Some(kind)) = (g.long, g.kind) else { continue };
         let open = |p: &str| api.open_path(&std::ffi::CString::new(p).unwrap());
         let long = match open(&long_path) {
@@ -276,7 +280,6 @@ pub fn discover(api: &HidApi) -> Vec<Endpoint> {
             kind,
             product: g.product,
             product_id: g.product_id,
-            key,
             long,
             short,
             backlog: VecDeque::new(),

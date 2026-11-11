@@ -56,7 +56,7 @@ pub struct StatusFile {
     /// Trigger buttons the master mouse has (control IDs).
     #[serde(default)]
     pub buttons: Vec<u16>,
-    /// Version of the running menu-bar app (empty before 0.3.5).
+    /// Version of the running tray app (empty before 0.3.5).
     #[serde(default)]
     pub version: String,
     /// Channels whose keyboard shortcut could not be registered.

@@ -88,20 +88,22 @@ pub struct Stamp {
 impl Stamp {
     /// Now, in this computer's time zone.
     pub fn now() -> Stamp {
-        #[cfg(windows)]
-        {
-            use windows_sys::Win32::Foundation::SYSTEMTIME;
-            use windows_sys::Win32::System::SystemInformation::GetLocalTime;
-            // Safety: a plain struct, filled in by the call.
-            let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
-            unsafe { GetLocalTime(&mut t) };
-            let SYSTEMTIME { wYear, wMonth, wDay, wHour, wMinute, wSecond, .. } = t;
-            Stamp { year: wYear, month: wMonth as u8, day: wDay as u8, hour: wHour as u8, minute: wMinute as u8, second: wSecond as u8 }
-        }
-        #[cfg(not(windows))]
-        {
-            let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-            Stamp::from_unix(secs)
+        use windows_sys::Win32::Foundation::SYSTEMTIME;
+        use windows_sys::Win32::System::SystemInformation::GetLocalTime;
+        // Safety: a plain struct, filled in by the call.
+        let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
+        unsafe { GetLocalTime(&mut t) };
+        Stamp::from_system_time(&t)
+    }
+
+    fn from_system_time(t: &windows_sys::Win32::Foundation::SYSTEMTIME) -> Stamp {
+        Stamp {
+            year: t.wYear,
+            month: t.wMonth as u8,
+            day: t.wDay as u8,
+            hour: t.wHour as u8,
+            minute: t.wMinute as u8,
+            second: t.wSecond as u8,
         }
     }
 
@@ -109,26 +111,22 @@ impl Stamp {
     pub fn local(time: SystemTime) -> Stamp {
         let secs = time.duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         let utc = Stamp::from_unix(secs);
-        #[cfg(windows)]
-        {
-            use windows_sys::Win32::Foundation::SYSTEMTIME;
-            use windows_sys::Win32::System::Time::SystemTimeToTzSpecificLocalTime;
-            let from = SYSTEMTIME {
-                wYear: utc.year,
-                wMonth: utc.month.into(),
-                wDayOfWeek: 0,
-                wDay: utc.day.into(),
-                wHour: utc.hour.into(),
-                wMinute: utc.minute.into(),
-                wSecond: utc.second.into(),
-                wMilliseconds: 0,
-            };
-            // Safety: plain structs; a null time zone means the current one.
-            let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
-            if unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &from, &mut t) } != 0 {
-                let SYSTEMTIME { wYear, wMonth, wDay, wHour, wMinute, wSecond, .. } = t;
-                return Stamp { year: wYear, month: wMonth as u8, day: wDay as u8, hour: wHour as u8, minute: wMinute as u8, second: wSecond as u8 };
-            }
+        use windows_sys::Win32::Foundation::SYSTEMTIME;
+        use windows_sys::Win32::System::Time::SystemTimeToTzSpecificLocalTime;
+        let from = SYSTEMTIME {
+            wYear: utc.year,
+            wMonth: utc.month.into(),
+            wDayOfWeek: 0,
+            wDay: utc.day.into(),
+            wHour: utc.hour.into(),
+            wMinute: utc.minute.into(),
+            wSecond: utc.second.into(),
+            wMilliseconds: 0,
+        };
+        // Safety: plain structs; a null time zone means the current one.
+        let mut t: SYSTEMTIME = unsafe { std::mem::zeroed() };
+        if unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &from, &mut t) } != 0 {
+            return Stamp::from_system_time(&t);
         }
         utc
     }
@@ -139,7 +137,6 @@ impl Stamp {
     }
 
     /// A time in seconds since 1970 (UTC), as a date and time.
-    #[cfg_attr(all(windows, not(test)), allow(dead_code))]
     pub fn from_unix(secs: u64) -> Stamp {
         let days = (secs / 86_400) as i64;
         let rest = secs % 86_400;
@@ -328,7 +325,6 @@ pub enum Deleted {
 
 /// Moves a backup to the Recycle Bin; where that does not work, deletes it.
 pub fn delete(path: &Path) -> Result<Deleted> {
-    #[cfg(windows)]
     match recycle(path) {
         Recycle::Done => {
             log::info!("settings backup {} moved to the Recycle Bin", path.display());
@@ -342,7 +338,6 @@ pub fn delete(path: &Path) -> Result<Deleted> {
     Ok(Deleted::Permanently)
 }
 
-#[cfg(windows)]
 enum Recycle {
     Done,
     /// The shell asked before deleting for good, and was told no.
@@ -354,7 +349,6 @@ enum Recycle {
 /// The shell's delete with undo, as Explorer does it. Where the file cannot be recycled
 /// (no Recycle Bin on that drive, or it is too large for it) the shell asks before
 /// deleting it for good.
-#[cfg(windows)]
 fn recycle(path: &Path) -> Recycle {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::UI::Shell::{

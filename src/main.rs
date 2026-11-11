@@ -95,7 +95,6 @@ const INSTANCE_PORT: u16 = 47_851;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    #[cfg(windows)]
     if !args.is_empty() {
         attach_console();
     }
@@ -184,8 +183,8 @@ fn real_main(args: &[String]) -> Result<()> {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| settings_ui::run(lock)))
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("the settings window crashed")));
             match result {
-                // Windows: if Direct3D could not start, try once more with OpenGL.
-                Err(e) if cfg!(windows) && !fallback => {
+                // If Direct3D could not start, try once more with OpenGL.
+                Err(e) if !fallback => {
                     log::warn!("{e:#}; trying OpenGL");
                     settings_ui::relaunch_with_opengl()
                 }
@@ -345,19 +344,19 @@ fn already_running(login: bool) -> Option<std::net::TcpListener> {
     None
 }
 
-/// A message the user sees: a dialog on Windows (no console there), stderr elsewhere.
+/// A message the user sees, as a dialog: the app usually has no console.
 pub fn show_message(text: &str) {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
-        let wide = |s: &str| s.encode_utf16().chain(std::iter::once(0)).collect::<Vec<u16>>();
-        let (text, title) = (wide(text), wide("flockswitch"));
-        unsafe {
-            MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONWARNING);
-        }
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
+    let (text, title) = (wide(text), wide("flockswitch"));
+    // Safety: both strings are zero-terminated and outlive the call.
+    unsafe {
+        MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONWARNING);
     }
-    #[cfg(not(windows))]
-    eprintln!("{text}");
+}
+
+/// `text` as the zero-terminated UTF-16 string Windows functions take.
+pub fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain([0]).collect()
 }
 
 /// Tells that the settings window cannot open, why, and where its log is.
@@ -413,16 +412,11 @@ pub fn uninstall() {
         }
         let _ = std::fs::remove_dir(dir);
         // Windows keeps our own open log file until we exit; finish the job afterwards.
-        #[cfg(windows)]
         if dir.exists() {
             use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             // raw_arg: cmd.exe does not understand Rust's \" escaping of inner quotes.
             let script = format!("/C ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{}\"", dir.display());
-            let _ = std::process::Command::new("cmd")
-                .raw_arg(script)
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn();
+            let _ = update::hidden("cmd").raw_arg(script).spawn();
         }
     }
     log::info!("uninstalled settings and start-at-login");
@@ -453,7 +447,6 @@ fn init_logging(file: Option<PathBuf>) {
 
 /// Lets `flockswitch.exe list` etc. print to the PowerShell/cmd window it was typed in,
 /// even though the program is built as a windowed (no console) app.
-#[cfg(windows)]
 fn attach_console() {
     use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
     unsafe {

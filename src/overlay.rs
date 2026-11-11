@@ -2,11 +2,13 @@
 //! that shows where the cursor is. The effects themselves are the table of drawing
 //! functions in overlay_render.rs, one per `EdgeAnimStyle` / `LocateStyle`; this file
 //! puts them on the screen in click-through layered windows, updated at about 60 Hz by
-//! one thread of its own. Windows exist only while an effect is showing.
+//! one thread of its own. That thread starts with the first effect, and the windows and
+//! their pixels exist only while an effect is showing.
 
 use crate::config::{parse_color, Edge, Edges, Locate, DEFAULT_EFFECT_COLOR};
 use crate::edge::Rect;
 use crate::overlay_render as render;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -19,19 +21,13 @@ enum Command {
     Locate(i32, [u8; 3], f64),
 }
 
+static READY: AtomicBool = AtomicBool::new(false);
 static COMMANDS: OnceLock<Sender<Command>> = OnceLock::new();
 
-/// Says this process has an interface and may draw. Without it (`flockswitch run`, as on
-/// macOS) no thread is started and nothing is drawn.
+/// Says this process has an interface and may draw. Without it (`flockswitch run`)
+/// nothing is drawn.
 pub fn set_ready() {
-    COMMANDS.get_or_init(|| {
-        let (commands, received) = channel();
-        let started = std::thread::Builder::new().name("overlay".into()).spawn(move || run(received));
-        if let Err(e) = started {
-            log::warn!("overlay: cannot start its thread: {e}");
-        }
-        commands
-    });
+    READY.store(true, Ordering::SeqCst);
 }
 
 /// A colour from the settings as red, green and blue.
@@ -39,10 +35,22 @@ fn components(text: &str) -> [u8; 3] {
     parse_color(text).or(parse_color(DEFAULT_EFFECT_COLOR)).unwrap_or([255, 204, 0])
 }
 
+/// Hands a command to the drawing thread, started on first use: most of the day there is
+/// nothing to draw, and no thread is kept for it until there is.
 fn send(command: Command) {
-    if let Some(commands) = COMMANDS.get() {
-        let _ = commands.send(command);
+    // Nothing to take away before anything was drawn.
+    if !READY.load(Ordering::SeqCst) || (matches!(command, Command::EdgeEnd) && COMMANDS.get().is_none()) {
+        return;
     }
+    let commands = COMMANDS.get_or_init(|| {
+        let (commands, received) = channel();
+        let started = std::thread::Builder::new().name("overlay".into()).spawn(move || run(received));
+        if let Err(e) = started {
+            log::warn!("overlay: cannot start its thread: {e}");
+        }
+        commands
+    });
+    let _ = commands.send(command);
 }
 
 /// Starts the countdown on `edge` of `display`, `elapsed` into the wait of `duration`,
@@ -270,17 +278,13 @@ mod platform {
         WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
     };
 
-    fn wide(text: &str) -> Vec<u16> {
-        text.encode_utf16().chain([0]).collect()
-    }
-
     fn module() -> HMODULE {
         // Safety: a null name asks for this executable's handle; nothing is kept.
         unsafe { GetModuleHandleW(null()) }
     }
 
     fn class_name() -> Vec<u16> {
-        wide("flockswitch-overlay")
+        crate::wide("flockswitch-overlay")
     }
 
     fn register_class() {
@@ -384,7 +388,12 @@ mod platform {
                 let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
                 if dc.is_null() || bitmap.is_null() || bits.is_null() {
                     log::warn!("overlay: cannot create the drawing surface");
-                    DeleteDC(dc);
+                    if !bitmap.is_null() {
+                        DeleteObject(bitmap);
+                    }
+                    if !dc.is_null() {
+                        DeleteDC(dc);
+                    }
                     DestroyWindow(hwnd);
                     return None;
                 }

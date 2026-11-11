@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use tao::event::{Event, StartCause};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIcon, TrayIconBuilder};
+use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 
 #[derive(Clone)]
 enum Action {
@@ -201,6 +201,10 @@ fn tray_icon(enabled: bool) -> Result<Icon> {
 
 impl Ui {
     fn create_tray(&mut self) -> Result<()> {
+        // The icon's own events (hover, click) are not used: the menu does everything.
+        // Without a handler tray-icon queues every one of them, and a queue nobody reads
+        // grows for as long as the app runs.
+        TrayIconEvent::set_event_handler(Some(|_: TrayIconEvent| {}));
         let menu = self.build_menu();
         let cfg = self.shared.config();
         let builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(self.tooltip());

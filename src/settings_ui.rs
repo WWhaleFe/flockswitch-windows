@@ -50,7 +50,6 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
     }
     let t = texts();
     let icon = egui::IconData { rgba: ICON_RGBA.to_vec(), width: ICON_SIDE, height: ICON_SIDE };
-    #[allow(unused_mut)]
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title(t.settings_title)
@@ -65,7 +64,6 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
     };
     // wgpu also tries Vulkan by default and picks it first where it exists; the Intel
     // UHD 620 Vulkan driver was seen to hang there. WGPU_BACKEND still overrides this.
-    #[cfg(windows)]
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_options.wgpu_setup {
         use eframe::wgpu::Backends;
         setup.instance_descriptor.backends = Backends::from_env().unwrap_or(Backends::DX12);
@@ -117,7 +115,7 @@ fn watch_first_frame(shown: Arc<AtomicBool>) {
             return;
         }
         let secs = FIRST_FRAME_TIMEOUT.as_secs();
-        if cfg!(windows) && std::env::var(RENDERER_ENV).is_err() {
+        if std::env::var(RENDERER_ENV).is_err() {
             log::warn!("no window after {secs}s (the graphics driver does not respond); trying OpenGL");
             if let Err(e) = relaunch_with_opengl() {
                 log::error!("cannot relaunch the settings window: {e:#}");
@@ -137,9 +135,9 @@ fn watch_first_frame(shown: Arc<AtomicBool>) {
 /// Ends this process at once. `exit` would first run the libraries' shutdown code, which
 /// can wait forever on the graphics driver that is stuck.
 fn terminate() -> ! {
-    #[cfg(windows)]
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+    // Safety: ends this process; nothing runs after it.
     unsafe {
-        use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
         TerminateProcess(GetCurrentProcess(), 1);
     }
     std::process::exit(1)
@@ -148,11 +146,11 @@ fn terminate() -> ! {
 /// Direct3D through wgpu, which also works where only OpenGL 1.1 exists; OpenGL when
 /// relaunched as a fallback.
 fn renderer() -> eframe::Renderer {
-    if cfg!(windows) && std::env::var(RENDERER_ENV).as_deref() != Ok("glow") {
-        #[cfg(windows)]
-        return eframe::Renderer::Wgpu;
+    if std::env::var(RENDERER_ENV).as_deref() == Ok("glow") {
+        eframe::Renderer::Glow
+    } else {
+        eframe::Renderer::Wgpu
     }
-    eframe::Renderer::Glow
 }
 
 /// A system font file, memory-mapped rather than read: mapped pages are read only as
@@ -808,7 +806,7 @@ impl SettingsApp {
         ui.add_space(10.0);
         card(ui, p, |ui| {
             let mut enabled = self.cfg.enabled;
-            if switch_row(ui, p, t.enabled, None, &mut enabled) {
+            if switch_row(ui, p, t.enabled, &mut enabled) {
                 self.apply(|c| c.enabled = enabled);
             }
         });
@@ -870,7 +868,7 @@ impl SettingsApp {
     fn shortcut_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         let mut on = self.cfg.hotkeys.on;
         // The "i" beside the title tells which combinations Windows lets an app use.
-        if switch_row_info(ui, p, t.hotkeys_title, None, Some(t.hotkey_help), &mut on) {
+        if switch_row_info(ui, p, t.hotkeys_title, Some(t.hotkey_help), &mut on) {
             self.apply(|c| c.hotkeys.on = on);
             self.stop_recording();
         }
@@ -983,7 +981,7 @@ impl SettingsApp {
         }
         divider(ui, p);
         let mut place = self.cfg.edges.place_cursor;
-        if switch_row(ui, p, t.edge_place, None, &mut place) {
+        if switch_row(ui, p, t.edge_place, &mut place) {
             self.apply(|c| c.edges.place_cursor = place);
         }
         hint(ui, p, t.edges_corner_hint);
@@ -992,7 +990,7 @@ impl SettingsApp {
     /// What it takes to start the wait, and what shows while it runs.
     fn edge_wait(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         let mut control = self.cfg.edges.require_control;
-        if switch_row(ui, p, t.edge_require_control, None, &mut control) {
+        if switch_row(ui, p, t.edge_require_control, &mut control) {
             self.apply(|c| c.edges.require_control = control);
         }
         hint(ui, p, t.edge_require_control_hint);
@@ -1030,7 +1028,7 @@ impl SettingsApp {
         let Some(own) = self.cfg.edges.effect(style).cloned() else { return };
         if style.can_shrink() {
             let mut shrink = own.shrink;
-            if switch_row(ui, p, t.edge_anim_shrink, None, &mut shrink) {
+            if switch_row(ui, p, t.edge_anim_shrink, &mut shrink) {
                 self.apply(|c| {
                     if let Some(e) = c.edges.effect_mut(style) {
                         e.shrink = shrink;
@@ -1063,10 +1061,10 @@ impl SettingsApp {
         let mut size = own.size;
         if size_row(ui, p, t, &format!("edge-size-{}", style.name()), &mut size) {
             self.apply(|c| {
-                    if let Some(e) = c.edges.effect_mut(style) {
-                        e.size = size;
-                    }
-                });
+                if let Some(e) = c.edges.effect_mut(style) {
+                    e.size = size;
+                }
+            });
         }
         hint(ui, p, t.edge_effect_own_hint);
     }
@@ -1478,7 +1476,7 @@ impl SettingsApp {
     fn locate_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         section(ui, p, t.section_locate, |ui| {
             let mut on = self.cfg.locate.on;
-            if switch_row(ui, p, t.locate_on, None, &mut on) {
+            if switch_row(ui, p, t.locate_on, &mut on) {
                 self.apply(|c| c.locate.on = on);
                 self.stop_recording();
             }
@@ -1506,7 +1504,7 @@ impl SettingsApp {
             }
             divider(ui, p);
             let mut on = self.cfg.locate.on_hotkey;
-            if switch_row(ui, p, t.locate_use_hotkey, None, &mut on) {
+            if switch_row(ui, p, t.locate_use_hotkey, &mut on) {
                 self.apply(|c| c.locate.on_hotkey = on);
                 self.stop_recording();
             }
@@ -1515,12 +1513,12 @@ impl SettingsApp {
             }
             divider(ui, p);
             let mut on = self.cfg.locate.on_arrival;
-            if switch_row(ui, p, t.locate_arrival, None, &mut on) {
+            if switch_row(ui, p, t.locate_arrival, &mut on) {
                 self.apply(|c| c.locate.on_arrival = on);
             }
             divider(ui, p);
             let mut on = self.cfg.locate.on_shake;
-            if switch_row(ui, p, t.locate_shake, None, &mut on) {
+            if switch_row(ui, p, t.locate_shake, &mut on) {
                 self.apply(|c| c.locate.on_shake = on);
             }
             if self.cfg.locate.on_shake {
@@ -1560,7 +1558,7 @@ impl SettingsApp {
             if let Some(al) = self.autostart.as_ref() {
                 divider(ui, p);
                 let mut on = self.autostart_on;
-                if switch_row(ui, p, t.autostart, None, &mut on) {
+                if switch_row(ui, p, t.autostart, &mut on) {
                     match if on { al.enable() } else { al.disable() } {
                         Ok(()) => self.autostart_on = on,
                         Err(e) => self.error = Some(e.to_string()),
@@ -1637,13 +1635,13 @@ impl SettingsApp {
             }
             divider(ui, p);
             let mut on = self.cfg.check_updates;
-            if switch_row(ui, p, t.update_check_auto, None, &mut on) {
+            if switch_row(ui, p, t.update_check_auto, &mut on) {
                 self.apply(|c| c.check_updates = on);
             }
             divider(ui, p);
             ui.add_enabled_ui(self.cfg.check_updates, |ui| {
                 let mut on = self.cfg.auto_update;
-                if switch_row(ui, p, t.update_auto, None, &mut on) {
+                if switch_row(ui, p, t.update_auto, &mut on) {
                     self.apply(|c| c.auto_update = on);
                 }
             });
@@ -2252,39 +2250,43 @@ fn title_row(ui: &mut Ui, p: Palette, label: &str, note: Option<&str>) {
 }
 
 /// A row with a label and an on/off switch on the right. Returns true when flipped.
-/// A `note` shows in smaller text under the label.
-fn switch_row(ui: &mut Ui, p: Palette, label: &str, note: Option<&str>, on: &mut bool) -> bool {
-    switch_row_info(ui, p, label, note, None, on)
+fn switch_row(ui: &mut Ui, p: Palette, label: &str, on: &mut bool) -> bool {
+    switch_row_info(ui, p, label, None, on)
 }
 
 /// The same, with an "i" beside the label that explains it (`info`).
-fn switch_row_info(ui: &mut Ui, p: Palette, label: &str, note: Option<&str>, info: Option<&str>, on: &mut bool) -> bool {
-    let h = if note.is_some() { 50.0 } else { 40.0 };
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+fn switch_row_info(ui: &mut Ui, p: Palette, label: &str, info: Option<&str>, on: &mut bool) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::click());
+    let resp = switch_response(resp, label, on);
+    let label_rect =
+        ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
+    paint_switch(ui, p, resp.id, Rect::from_center_size(Pos2::new(rect.right() - 20.0, rect.center().y), SWITCH_SIZE), *on);
+    if let Some(text) = info {
+        info_after(ui, p, label_rect, text);
+    }
+    resp.clicked()
+}
+
+/// The size of an on/off switch.
+const SWITCH_SIZE: Vec2 = Vec2::new(40.0, 24.0);
+
+/// Makes `resp` an on/off switch named `label`: flips `on` when clicked.
+fn switch_response(resp: Response, label: &str, on: &mut bool) -> Response {
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
     resp.widget_info(|| WidgetInfo::selected(Role::Switch, true, *on, label));
     if resp.clicked() {
         *on = !*on;
     }
-    let painter = ui.painter();
-    let left = Pos2::new(rect.left(), rect.center().y);
-    let label_rect = match note {
-        Some(note) => {
-            painter.text(left + Vec2::new(0.0, 3.0), Align2::LEFT_TOP, note, FontId::proportional(12.5), p.amber);
-            painter.text(left - Vec2::new(0.0, 1.0), Align2::LEFT_BOTTOM, label, FontId::proportional(14.5), p.text)
-        }
-        None => painter.text(left, Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text),
-    };
+    resp
+}
 
-    let how_on = ui.ctx().animate_bool_responsive(resp.id, *on);
-    let track = Rect::from_center_size(Pos2::new(rect.right() - 20.0, rect.center().y), Vec2::new(40.0, 24.0));
+/// Draws an on/off switch in `track`, sliding between off and on.
+fn paint_switch(ui: &Ui, p: Palette, id: egui::Id, track: Rect, on: bool) {
+    let how_on = ui.ctx().animate_bool_responsive(id, on);
+    let painter = ui.painter();
     painter.rect_filled(track, 12, p.track.lerp_to_gamma(p.accent, how_on));
     let x = egui::lerp(track.left() + 12.0..=track.right() - 12.0, how_on);
     painter.circle_filled(Pos2::new(x, track.center().y), 9.5, Color32::WHITE);
-    if let Some(text) = info {
-        info_after(ui, p, label_rect, text);
-    }
-    resp.clicked()
 }
 
 const ROW_NORMAL: f32 = 52.0;
@@ -2329,10 +2331,6 @@ fn labeled_row_info(
     ui.new_child(UiBuilder::new().max_rect(area)).scope(control).inner
 }
 
-/// Equal-width buttons in one row. `selected(i)` says which are on; returns the index
-/// clicked. One-choice rows (mode, tabs, language) draw them on a shared bar; toggle
-/// rows (channels) as separate outlined buttons in the same positions, so the rows
-/// line up.
 /// Height and text size of a segment bar.
 #[derive(Clone, Copy)]
 struct SegSize {
@@ -2356,6 +2354,8 @@ fn locked_fill(p: Palette) -> Color32 {
     Color32::from_rgb(mix(r, tr), mix(g, tg), mix(b, tb))
 }
 
+/// Equal-width segments on one shared bar (tabs, channels, one-of-several choices).
+/// `selected(i)` says which are on; returns the index clicked.
 #[allow(clippy::too_many_arguments)]
 fn segments(
     ui: &mut Ui,
@@ -2370,11 +2370,8 @@ fn segments(
     off: Option<usize>,
     selected: impl Fn(usize) -> bool,
 ) -> Option<usize> {
-    let toggles = role == Role::CheckBox;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), size.height), Sense::hover());
-    if !toggles {
-        ui.painter().rect_filled(rect, 8, p.track.gamma_multiply(0.55));
-    }
+    ui.painter().rect_filled(rect, 8, p.track.gamma_multiply(0.55));
     let w = rect.width() / labels.len() as f32;
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
@@ -2402,14 +2399,11 @@ fn segments(
         } else if on {
             (p.accent, Color32::WHITE)
         } else if resp.hovered() {
-            (if toggles { p.hover } else { p.card.gamma_multiply(0.6) }, p.text)
+            (p.card.gamma_multiply(0.6), p.text)
         } else {
-            (if toggles { p.card } else { Color32::TRANSPARENT }, p.text)
+            (Color32::TRANSPARENT, p.text)
         };
         painter.rect_filled(seg, 7, fill);
-        if toggles && !on && !locked {
-            painter.rect_stroke(seg, 7, Stroke::new(1.0, p.track), StrokeKind::Inside);
-        }
         if locked {
             // A faint inner shadow: pressed in, not pressable.
             painter.rect_stroke(seg, 7, Stroke::new(1.5, Color32::from_black_alpha(45)), StrokeKind::Inside);
@@ -2520,30 +2514,33 @@ fn dialog_row(ui: &mut Ui, p: Palette, label: &str, width: f32, control: impl Fn
 
 /// The on/off switch of a row, on its own. True when flipped.
 fn toggle(ui: &mut Ui, p: Palette, label: &str, on: &mut bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(40.0, 24.0), Sense::click());
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-    resp.widget_info(|| WidgetInfo::selected(Role::Switch, true, *on, label));
-    if resp.clicked() {
-        *on = !*on;
-    }
-    let how_on = ui.ctx().animate_bool_responsive(resp.id, *on);
-    let painter = ui.painter();
-    painter.rect_filled(rect, 12, p.track.lerp_to_gamma(p.accent, how_on));
-    let x = egui::lerp(rect.left() + 12.0..=rect.right() - 12.0, how_on);
-    painter.circle_filled(Pos2::new(x, rect.center().y), 9.5, Color32::WHITE);
+    let (rect, resp) = ui.allocate_exact_size(SWITCH_SIZE, Sense::click());
+    let resp = switch_response(resp, label, on);
+    paint_switch(ui, p, resp.id, rect, *on);
     resp.clicked()
 }
 
 /// An explanation on the left and buttons on the right. Returns the index clicked.
 fn confirm_row(ui: &mut Ui, p: Palette, explain: &str, labels: &[(&str, ButtonKind)]) -> Option<usize> {
-    let buttons: f32 = labels.iter().map(|(l, k)| button_width(ui, l, *k)).sum::<f32>() + 8.0 * (labels.len() - 1) as f32;
+    let buttons = group_width(ui, labels);
     let width = ui.available_width();
     let text = ui.painter().layout(explain.to_string(), FontId::proportional(12.5), p.muted, width - buttons - 16.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, (text.size().y + 20.0).max(48.0)), Sense::hover());
     ui.painter().galley(Pos2::new(rect.left(), rect.center().y - text.size().y / 2.0), text, p.muted);
+    button_group(ui, p, rect, buttons, labels)
+}
+
+/// How wide the buttons of `labels` are side by side, 8 points apart.
+fn group_width(ui: &Ui, labels: &[(&str, ButtonKind)]) -> f32 {
+    labels.iter().map(|(l, k)| button_width(ui, l, *k)).sum::<f32>() + 8.0 * labels.len().saturating_sub(1) as f32
+}
+
+/// The buttons of `labels` in a row at the right end of `row`, `width` wide in all.
+/// Returns the index clicked.
+fn button_group(ui: &mut Ui, p: Palette, row: Rect, width: f32, labels: &[(&str, ButtonKind)]) -> Option<usize> {
     let area = Rect::from_min_max(
-        Pos2::new(rect.right() - buttons, rect.center().y - 15.0),
-        Pos2::new(rect.right(), rect.center().y + 15.0),
+        Pos2::new(row.right() - width, row.center().y - 15.0),
+        Pos2::new(row.right(), row.center().y + 15.0),
     );
     let mut clicked = None;
     ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
@@ -2562,7 +2559,7 @@ fn confirm_row(ui: &mut Ui, p: Palette, explain: &str, labels: &[(&str, ButtonKi
 /// A file in the backup manager: its name and date on the left, buttons on the right.
 /// Returns the index clicked.
 fn file_row(ui: &mut Ui, p: Palette, name: &str, date: &str, labels: &[(&str, ButtonKind)]) -> Option<usize> {
-    let buttons: f32 = labels.iter().map(|(l, k)| button_width(ui, l, *k)).sum::<f32>() + 8.0 * (labels.len() - 1) as f32;
+    let buttons = group_width(ui, labels);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::hover());
     // A long name is cut at the buttons; the whole of it shows under the mouse.
     let text = Rect::from_min_max(rect.min, Pos2::new(rect.right() - buttons - 12.0, rect.max.y));
@@ -2570,29 +2567,14 @@ fn file_row(ui: &mut Ui, p: Palette, name: &str, date: &str, labels: &[(&str, Bu
     painter.text(Pos2::new(rect.left(), rect.center().y - 1.0), Align2::LEFT_BOTTOM, name, FontId::proportional(14.5), p.text);
     painter.text(Pos2::new(rect.left(), rect.center().y + 3.0), Align2::LEFT_TOP, date, FontId::proportional(12.5), p.muted);
     ui.interact(text, egui::Id::unique(("backup-file", name)), Sense::hover()).on_hover_text(name);
-    let area = Rect::from_min_max(
-        Pos2::new(rect.right() - buttons, rect.center().y - 15.0),
-        Pos2::new(rect.right(), rect.center().y + 15.0),
-    );
-    let mut clicked = None;
-    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        ui.horizontal(|ui| {
-            for (i, (label, kind)) in labels.iter().enumerate() {
-                if button(ui, p, label, *kind).clicked() {
-                    clicked = Some(i);
-                }
-            }
-        });
-    });
-    clicked
+    button_group(ui, p, rect, buttons, labels)
 }
 
 /// A file being renamed: a text field with OK and Cancel, and why the name cannot be
 /// used under it. Some(true) on OK (or Enter), Some(false) on Cancel.
 fn rename_row(ui: &mut Ui, p: Palette, t: &Texts, r: &mut Renaming) -> Option<bool> {
     let labels = [(t.ok, ButtonKind::Primary), (t.cancel, ButtonKind::Plain)];
-    let buttons: f32 = labels.iter().map(|(l, k)| button_width(ui, l, *k)).sum::<f32>() + 8.0;
+    let buttons = group_width(ui, &labels);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::hover());
     let field = Rect::from_min_max(
         Pos2::new(rect.left(), rect.center().y - CONTROL_HEIGHT / 2.0),

@@ -234,7 +234,7 @@ pub enum EdgeAnimStyle {
     Vortex,
     Scan,
     Liquid,
-    /// A different effect each time; see `resolved`. Has no drawing function of its own.
+    /// A different effect each time; see `Edges::look`. Has no drawing function of its own.
     Random,
 }
 
@@ -276,15 +276,6 @@ impl EdgeAnimStyle {
 
     fn from_name(name: &str) -> Option<EdgeAnimStyle> {
         EDGE_ANIM_STYLES.into_iter().find(|s| s.name() == name.trim().to_lowercase())
-    }
-
-    /// The effect to draw now: for Random one of the others (never None).
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub fn resolved(self) -> EdgeAnimStyle {
-        match self {
-            EdgeAnimStyle::Random => EDGE_EFFECTS[random_below(EDGE_EFFECTS.len())],
-            style => style,
-        }
     }
 
     /// Where its own settings are in `Edges::effects`; None for None and Random.
@@ -1657,12 +1648,6 @@ mod tests {
         c.set("edge.anim", "vortex").unwrap();
         let back = Config::parse(&toml::to_string_pretty(&c).unwrap()).unwrap();
         assert_eq!(back.edges, c.edges);
-        c.set("edge.anim", "random").unwrap();
-        for _ in 0..200 {
-            let picked = c.edges.anim_style.resolved();
-            assert!(picked != EdgeAnimStyle::None && picked != EdgeAnimStyle::Random, "{picked:?}");
-        }
-        assert_eq!(EdgeAnimStyle::Bar.resolved(), EdgeAnimStyle::Bar);
         // The table of drawing functions in overlay_render.rs is indexed by these numbers.
         for (i, style) in EDGE_ANIM_STYLES.into_iter().enumerate() {
             assert_eq!(style as usize, i);

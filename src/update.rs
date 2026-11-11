@@ -123,8 +123,12 @@ pub fn spawn_periodic(shared: Arc<Shared>) {
                 None => started.elapsed() >= FIRST_CHECK,
                 Some(at) => at.elapsed() >= CHECK_INTERVAL,
             };
+            // The settings are copied only once a look is due, not every second.
+            if !due {
+                continue;
+            }
             let cfg = shared.config();
-            if !due || !cfg.check_updates || matches!(shared.status().update, UpdateState::Installing(_)) {
+            if !cfg.check_updates || matches!(shared.status().update, UpdateState::Installing(_)) {
                 continue;
             }
             last = Some(Instant::now());
@@ -165,32 +169,24 @@ pub fn is_newer(a: &str, b: &str) -> bool {
     false
 }
 
-/// Opens a web link (or the Store app's) with the system's default handler.
+/// Opens a web link, the Store app's page or a Settings page (`ms-settings:`) with the
+/// system's default handler.
 pub fn open_url(url: &str) {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::UI::Shell::ShellExecuteW;
-        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
-        let (verb, target) = (wide("open"), wide(url));
-        unsafe {
-            ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
-        }
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+    let (verb, target) = (crate::wide("open"), crate::wide(url));
+    // Safety: both strings are zero-terminated and outlive the call.
+    unsafe {
+        ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL);
     }
-    #[cfg(not(windows))]
-    log::info!("open {url}");
 }
 
 /// A console program run without flashing a console window.
-fn hidden(program: &str) -> Command {
-    #[allow(unused_mut)]
+pub(crate) fn hidden(program: &str) -> Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let mut c = Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        c.creation_flags(CREATE_NO_WINDOW);
-    }
+    c.creation_flags(CREATE_NO_WINDOW);
     c
 }
 
@@ -377,7 +373,6 @@ mod github {
 }
 
 /// The Store version's updates, through the Store.
-#[cfg(windows)]
 mod store {
     use anyhow::{bail, Result};
     use windows::Services::Store::{StoreContext, StorePackageUpdateState};
@@ -413,19 +408,6 @@ mod store {
             StorePackageUpdateState::Completed => Ok(()),
             state => bail!("the Store update ended as {state:?}"),
         }
-    }
-}
-
-#[cfg(not(windows))]
-mod store {
-    use anyhow::{bail, Result};
-
-    pub fn newer() -> Result<Option<String>> {
-        bail!("no Microsoft Store here")
-    }
-
-    pub fn install() -> Result<()> {
-        bail!("no Microsoft Store here")
     }
 }
 

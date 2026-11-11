@@ -31,7 +31,7 @@
 | 시작 방법 | "모든 컴퓨터에 설치하세요" 한 줄 | 6단계 설정 순서 |
 | 문제 해결 | 없음 | 자주 겪는 4가지 |
 | 제품 기능(Product features) | 없음 | 14개 항목 |
-| 이번 버전의 새로운 기능 | 없음 | 1.8.0·1.7.1·1.7.0 변경 사항 |
+| 이번 버전의 새로운 기능 | 없음 | 1.9.0·1.8.0·1.7.1·1.7.0 변경 사항 |
 | 스크린샷 | 작은 설정 창 3장, 1.0 화면 | 6장 구성안과 캡션 |
 
 ## 2. 현재 목록의 문제점
@@ -165,6 +165,10 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
+1.9.0
+• 하루 종일 켜 두어도 메모리를 덜 쓰도록 다듬었습니다. 알림 영역 아이콘이 쓰지 않는 기록을 계속 쌓아 두던 문제를 고쳤습니다.
+• 동작과 화면, 설정은 그대로입니다. 지금 쓰던 설정을 그대로 이어서 씁니다.
+
 1.8.0
 • 모서리 대기 효과마다 색상·크기·방향을 따로 저장합니다. 링을 바꿔도 막대는 그대로입니다.
 • 랜덤은 매번 효과와 함께 줄어드는 방향과 작아지며 사라지기도 무작위로 골라 다양하게 보여 줍니다.
@@ -316,6 +320,10 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 ### 5-3. What's new in this version
 
 ```
+1.9.0
+• Uses less memory while it runs all day: the notification-area icon no longer piles up events that nothing reads.
+• Everything works and looks as before, and your settings carry over as they are.
+
 1.8.0
 • Each edge countdown effect keeps its own colour, size and direction: changing the ring no longer changes the bar.
 • Random now varies more: each time it also picks the direction and shrinking away at random.
