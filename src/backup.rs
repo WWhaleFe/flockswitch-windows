@@ -21,6 +21,7 @@ const KNOWN_KEYS: &[&str] = &[
     "language",
     "check_updates",
     "auto_update",
+    "keep_wheel_mode",
     "buttons",
     "hotkeys",
     "edges",

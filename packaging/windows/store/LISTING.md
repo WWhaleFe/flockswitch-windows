@@ -31,7 +31,7 @@
 | 시작 방법 | "모든 컴퓨터에 설치하세요" 한 줄 | 6단계 설정 순서 |
 | 문제 해결 | 없음 | 자주 겪는 4가지 |
 | 제품 기능(Product features) | 없음 | 14개 항목 |
-| 이번 버전의 새로운 기능 | 없음 | 1.9.0·1.8.0·1.7.1·1.7.0 변경 사항 |
+| 이번 버전의 새로운 기능 | 없음 | 1.10.0·1.9.0·1.8.0·1.7.1·1.7.0 변경 사항 |
 | 스크린샷 | 작은 설정 창 3장, 1.0 화면 | 6장 구성안과 캡션 |
 
 ## 2. 현재 목록의 문제점
@@ -165,6 +165,10 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
+1.10.0
+• 마우스가 돌아오면 이 PC에서 쓰던 휠 모드(걸림·무한 회전)로 되돌립니다. 다른 기기(예: Android)에 막 도착했을 때 휠 모드 전환 버튼을 누르면 휠 모드가 바뀐 채 돌아오던 문제를 바로잡습니다. 설정 → 전환 → 휠 모드 전환 버튼에서 끌 수 있습니다.
+• 마우스가 다시 연결되면 버튼을 더 빨리 가져옵니다.
+
 1.9.0
 • 하루 종일 켜 두어도 메모리를 덜 쓰도록 다듬었습니다. 알림 영역 아이콘이 쓰지 않는 기록을 계속 쌓아 두던 문제를 고쳤습니다.
 • 동작과 화면, 설정은 그대로입니다. 지금 쓰던 설정을 그대로 이어서 씁니다.
@@ -320,6 +324,10 @@ Move your Logitech mouse and keyboard to another computer together with one mous
 ### 5-3. What's new in this version
 
 ```
+1.10.0
+• When the mouse comes back, its wheel returns to the ratchet or free-spinning mode used on this PC; a press of the wheel mode-shift button just after it arrived on another device (for example Android) could flip it. It can be turned off in Settings → Switching → wheel mode-shift button.
+• The mouse buttons are taken back faster after the mouse reconnects.
+
 1.9.0
 • Uses less memory while it runs all day: the notification-area icon no longer piles up events that nothing reads.
 • Everything works and looks as before, and your settings carry over as they are.
