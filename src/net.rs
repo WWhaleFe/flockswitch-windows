@@ -299,7 +299,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                 };
                                 if let Err(e) = master.update_config(|c| {
                                     settings.apply_to(&mut c.network);
-                                    if let Some(keys) = pending { c.network.keys = keys; }
+                                    if let Some(keys) = pending { c.network.keys.extend(keys); }
                                     apply_app_settings(c, &settings.app);
                                 }) {
                                     log::error!("save master settings: {e:#}");

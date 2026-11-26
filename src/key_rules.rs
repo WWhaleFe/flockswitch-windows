@@ -40,8 +40,12 @@ impl Outbox {
         Self { path }
     }
 
-    pub fn publish(&self, keys: &Rules) -> anyhow::Result<()> {
+    /// Queues only the pairs the user changed. Successive edits merge per pair, the newest
+    /// value of a pair wins.
+    pub fn publish(&self, changed: &Rules) -> anyhow::Result<()> {
         use std::sync::atomic::{AtomicU64, Ordering};
+        let mut keys = read(&self.path).ok().flatten().unwrap_or_default();
+        keys.extend(changed.iter().map(|(pair, rule)| (pair.clone(), rule.clone())));
         static NEXT: AtomicU64 = AtomicU64::new(0);
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -56,7 +60,7 @@ impl Outbox {
                 .write(true)
                 .create_new(true)
                 .open(&tmp)?;
-            file.write_all(&serde_json::to_vec(keys)?)?;
+            file.write_all(&serde_json::to_vec(&keys)?)?;
             file.sync_all()?;
             drop(file);
             std::fs::rename(&tmp, &self.path)?;
@@ -97,10 +101,12 @@ impl Outbox {
 
     /// The settings UI keeps showing its newest edit while an older send completes.
     pub fn latest(&self) -> anyhow::Result<Option<Rules>> {
-        match read(&self.path)? {
-            Some(keys) => Ok(Some(keys)),
-            None => read(&self.path.with_extension("inflight")),
-        }
+        let sent = read(&self.path.with_extension("inflight"))?;
+        let queued = read(&self.path)?;
+        Ok(match (sent, queued) {
+            (Some(mut sent), Some(queued)) => { sent.extend(queued); Some(sent) }
+            (sent, queued) => sent.or(queued),
+        })
     }
 
     /// Only rules observed in the master's settings count as confirmation, never a
@@ -244,6 +250,27 @@ mod tests {
         assert_eq!(outbox.pending().unwrap(), Some(latest.clone()));
         outbox.confirm(&latest).unwrap();
         assert_eq!(outbox.pending().unwrap(), None);
+    }
+
+    #[test]
+    fn successive_edits_merge_per_pair_and_latest_covers_the_one_in_flight() {
+        let fixture = Fixture::new();
+        let outbox = fixture.outbox();
+        let one = |pair: &str, mode| -> Rules {
+            let mut keys = rules(mode);
+            keys.retain(|key, _| key == pair);
+            keys
+        };
+        outbox.publish(&one("mac>windows", flock_net::ModMode::Off)).unwrap();
+        outbox.publish(&one("linux>windows", flock_net::ModMode::Off)).unwrap();
+        outbox.publish(&one("mac>windows", flock_net::ModMode::Position)).unwrap();
+        let pending = outbox.pending().unwrap().unwrap();
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending["mac>windows"].mod_mode, flock_net::ModMode::Position);
+        outbox.publish(&one("mac>android", flock_net::ModMode::Off)).unwrap();
+        let latest = outbox.latest().unwrap().unwrap();
+        assert_eq!(latest.len(), 3);
+        assert_eq!(outbox.pending().unwrap().unwrap().len(), 2);
     }
 
     #[test]

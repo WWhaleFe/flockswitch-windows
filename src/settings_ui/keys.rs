@@ -277,10 +277,15 @@ impl SettingsApp {
 
     /// Saves one change to the rules. A sub also sends the rules to its master.
     fn edit_key_rules(&mut self, src: Os, dst: Os, edit: KeyEdit) {
+        let before = self.cfg.network.all_rules();
         self.apply(|c| logic::edit_keys(&mut c.network, src, dst, edit));
         if self.follows_master() {
-            let keys = self.cfg.network.keys.clone();
-            if let Err(e) = crate::net::request_key_rules(&keys) {
+            // Only the pairs this edit changed go to the master, which merges them per pair.
+            let changed: flockswitch::key_rules::Rules = self.cfg.network.all_rules().into_iter()
+                .filter(|(pair, rule)| before.get(pair) != Some(rule))
+                .collect();
+            if changed.is_empty() { return; }
+            if let Err(e) = crate::net::request_key_rules(&changed) {
                 self.error = Some(format!("{e:#}"));
             }
         }
