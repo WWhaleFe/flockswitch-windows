@@ -23,9 +23,37 @@ use windows_sys::Win32::{
     UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 
+/// Where files received from another computer are saved.
+pub fn received_dir() -> Option<PathBuf> {
+    Some(dirs::download_dir()?.join("flockswitch"))
+}
+
 pub fn config_dir() -> PathBuf {
     Config::base_dir()
 }
+
+/// Where the settings window leaves key rules edited on a sub. The window is another
+/// process and cannot call the service; the network thread sends them to the master.
+fn key_rules_request_path() -> PathBuf {
+    Config::path().with_file_name("key-rules.request")
+}
+
+/// Asks the running app to send `keys` to the master (a sub's edit of "OS 전환 시").
+pub fn request_key_rules(keys: &std::collections::BTreeMap<String, flock_net::DirRules>) -> anyhow::Result<()> {
+    let path = key_rules_request_path();
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, serde_json::to_vec(keys)?)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
+}
+
+fn take_key_rules_request() -> Option<std::collections::BTreeMap<String, flock_net::DirRules>> {
+    let path = key_rules_request_path();
+    let bytes = std::fs::read(&path).ok()?;
+    let _ = std::fs::remove_file(&path);
+    serde_json::from_slice(&bytes).ok()
+}
+
 /// The running service and the config it runs with, for the edge watcher.
 struct Live {
     service: Arc<Service>,
@@ -56,11 +84,12 @@ pub fn network_side_ready(edge: Edge) -> bool {
     let Some(live) = live.as_ref() else { return false };
     let side = side_of(edge);
     let status = live.service.status();
+    // The computer in the neighbouring cell of the layout (a master's sub or, on a sub,
+    // another sub), as long as its link is up.
+    let next = flock_net::layout::neighbour(&status.layout, &status.me.id, side);
     status.running
         && status.state.mode == "local"
-        && live.config.peers.iter().any(|p| {
-            p.side == Some(side) && status.peers.iter().any(|s| s.id == p.id && s.connected)
-        })
+        && next.is_some_and(|id| status.peers.iter().any(|s| s.id == id && s.connected))
 }
 
 /// Moves control to the computer on `edge`, entering at the spot matching (x, y).
@@ -194,6 +223,17 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                 let version = shared.version();
                 let config = runtime_config(&shared);
                 platform.edges_allowed.store(shared.config().network_edges_allowed(), Ordering::Release);
+                // Key rules edited on a sub go to its master (see `request_key_rules`).
+                if let Some(keys) = take_key_rules_request() {
+                    match &service {
+                        Some(s) => {
+                            if let Err(e) = s.send_key_rules(keys) {
+                                log::warn!("send key rules to the master: {e:#}");
+                            }
+                        }
+                        None => log::info!("key rules edited while sharing is off: kept on this computer only"),
+                    }
+                }
                 if !config.on {
                     LIVE.lock().unwrap().take();
                     mode = "local".into();
@@ -292,6 +332,13 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                         break;
                     }
                     thread::sleep(Duration::from_millis(50));
+                    // Woke from sleep or unlocked: look for the other computers again now.
+                    if crate::wake::take() {
+                        if let Some(s) = &service {
+                            log::info!("wake or unlock: reconnecting");
+                            let _ = s.reconnect();
+                        }
+                    }
                     if let Some(s) = &service {
                         let now = s.status().state.mode;
                         // The cursor arrived here, or came back here.
@@ -618,7 +665,7 @@ impl Platform for WindowsPlatform {
         }
     }
     fn received_dir(&self) -> Option<PathBuf> {
-        Some(dirs::download_dir()?.join("flockswitch"))
+        received_dir()
     }
     fn ready(&self) -> Result<(), String> {
         Ok(())

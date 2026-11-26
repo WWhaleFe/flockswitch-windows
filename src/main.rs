@@ -17,11 +17,13 @@ mod icon;
 mod net;
 mod overlay;
 mod overlay_render;
+mod settings_logic;
 mod settings_ui;
 mod shared;
 mod store;
 mod tray;
 mod update;
+mod wake;
 mod window_size;
 
 use anyhow::{bail, Result};

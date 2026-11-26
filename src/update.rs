@@ -68,6 +68,17 @@ pub fn find() -> Result<Option<String>> {
     }
 }
 
+/// "Update now" in the settings window: the same install, but the Store version asks the
+/// Store to download and install with its own dialog (`RequestDownloadAndInstall...`; Windows
+/// may show one), and when that cannot be done opens the app's Store page instead.
+pub fn install_now() -> Result<()> {
+    if crate::store::packaged() {
+        store::install_now().inspect_err(|_| open_url(STORE_PAGE))
+    } else {
+        github::install()
+    }
+}
+
 /// Installs the newest version and has it started. Returns once that is under way:
 /// this copy is then asked to quit, or closed by Windows.
 pub fn install() -> Result<()> {
@@ -391,6 +402,29 @@ mod store {
             newest = Some(format!("{}.{}.{}", v.Major, v.Minor, v.Build));
         }
         Ok(newest)
+    }
+
+    /// Download and install with the Store's own dialog, which belongs to the window that
+    /// is in front (the settings window the button was pressed in).
+    pub fn install_now() -> Result<()> {
+        use windows::core::Interface;
+        let ctx = context()?;
+        if let Ok(init) = ctx.cast::<windows::Win32::UI::Shell::IInitializeWithWindow>() {
+            let hwnd = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetForegroundWindow() };
+            if !hwnd.is_null() {
+                let _ = unsafe { init.Initialize(windows::Win32::Foundation::HWND(hwnd)) };
+            }
+        }
+        let updates = ctx.GetAppAndOptionalStorePackageUpdatesAsync()?.join()?;
+        if updates.Size()? == 0 {
+            bail!("the Store offers no update");
+        }
+        // Installing closes flockswitch; Windows starts it again.
+        let result = ctx.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)?.join()?;
+        match result.OverallState()? {
+            StorePackageUpdateState::Completed => Ok(()),
+            state => bail!("the Store update ended as {state:?}"),
+        }
     }
 
     pub fn install() -> Result<()> {
