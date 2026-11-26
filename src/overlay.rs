@@ -284,7 +284,7 @@ mod platform {
     }
 
     fn class_name() -> Vec<u16> {
-        crate::wide("flockswitch2-overlay")
+        crate::wide("flockswitch-overlay")
     }
 
     fn register_class() {

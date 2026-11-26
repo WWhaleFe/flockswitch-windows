@@ -43,18 +43,17 @@ pub const DEFAULT_PORT: u16 = 47160;
 pub enum PortProblem {
     /// Below 1024: reserved for system services.
     Reserved,
-    /// Used by flockswitch or flockswitch2 themselves, or by mDNS.
+    /// Used by flockswitch itself, or by mDNS.
     Ours,
     /// Another program on this computer is listening on it.
     InUse,
 }
 
-/// Ports flockswitch and flockswitch2 keep for themselves (single-instance locks of both
-/// programs) and mDNS.
-pub const KEPT_PORTS: [u16; 5] = [5353, 47851, 47852, 47861, 47862];
+/// Single-instance ports for the app and settings, plus mDNS.
+pub const KEPT_PORTS: [u16; 3] = [5353, 47851, 47852];
 
 /// Checks a port the user typed. `current` is the port sharing listens on now (which
-/// is busy because of flockswitch2 itself, so it is not reported as in use).
+/// is busy because of flockswitch itself, so it is not reported as in use).
 pub fn check_port(port: u16, current: u16) -> Result<(), PortProblem> {
     if port < 1024 {
         return Err(PortProblem::Reserved);
@@ -149,12 +148,16 @@ pub enum Role {
 pub const MAX_SUBS: usize = 3;
 
 /// The settings a master hands to its subs, which use them instead of their own.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MasterSettings {
     pub master_name: String,
     pub require_control: bool,
     pub swap_cmd_ctrl: bool,
+    #[serde(default = "enabled_by_default")]
+    pub mac_capslock_to_hangul: bool,
+    #[serde(default = "enabled_by_default")]
+    pub mac_shift_space_to_hangul: bool,
     pub lang1_on_mac: String,
     pub share_clipboard: bool,
     pub clipboard_limit_mb: u32,
@@ -163,12 +166,19 @@ pub struct MasterSettings {
     /// The app's own effect settings (countdown, haptics, cursor highlight), opaque here.
     pub app: serde_json::Value,
 }
+fn enabled_by_default() -> bool { true }
+
+impl Default for MasterSettings {
+    fn default() -> Self { Self::of(&NetConfig::default(), "") }
+}
 impl MasterSettings {
     pub fn of(config: &NetConfig, master_name: &str) -> Self {
         Self {
             master_name: master_name.into(),
             require_control: config.require_control,
             swap_cmd_ctrl: config.swap_cmd_ctrl,
+            mac_capslock_to_hangul: config.mac_capslock_to_hangul,
+            mac_shift_space_to_hangul: config.mac_shift_space_to_hangul,
             lang1_on_mac: config.lang1_on_mac.clone(),
             share_clipboard: config.share_clipboard,
             clipboard_limit_mb: config.clipboard_limit_mb,
@@ -181,6 +191,8 @@ impl MasterSettings {
     pub fn apply_to(&self, config: &mut NetConfig) {
         config.require_control = self.require_control;
         config.swap_cmd_ctrl = self.swap_cmd_ctrl;
+        config.mac_capslock_to_hangul = self.mac_capslock_to_hangul;
+        config.mac_shift_space_to_hangul = self.mac_shift_space_to_hangul;
         config.lang1_on_mac = self.lang1_on_mac.clone();
         config.share_clipboard = self.share_clipboard;
         config.clipboard_limit_mb = self.clipboard_limit_mb;
@@ -195,6 +207,10 @@ pub struct NetConfig {
     pub name: String,
     pub port: u16,
     pub swap_cmd_ctrl: bool,
+    #[serde(default = "enabled_by_default")]
+    pub mac_capslock_to_hangul: bool,
+    #[serde(default = "enabled_by_default")]
+    pub mac_shift_space_to_hangul: bool,
     pub lang1_on_mac: String,
     pub cross_delay_ms: u64,
     pub peers: Vec<PeerConfig>,
@@ -229,6 +245,8 @@ impl Default for NetConfig {
             name: String::new(),
             port: 47160,
             swap_cmd_ctrl: true,
+            mac_capslock_to_hangul: true,
+            mac_shift_space_to_hangul: true,
             lang1_on_mac: "capslock".into(),
             cross_delay_ms: 0,
             peers: Vec::new(),
@@ -430,7 +448,7 @@ mod tests {
     #[test]
     fn port_checks() {
         assert_eq!(check_port(80, DEFAULT_PORT), Err(PortProblem::Reserved));
-        assert_eq!(check_port(47861, DEFAULT_PORT), Err(PortProblem::Ours));
+        assert_eq!(check_port(47851, DEFAULT_PORT), Err(PortProblem::Ours));
         assert_eq!(check_port(5353, DEFAULT_PORT), Err(PortProblem::Ours));
         let busy = std::net::TcpListener::bind(("0.0.0.0", 0)).unwrap();
         let port = busy.local_addr().unwrap().port();
@@ -479,5 +497,26 @@ mod permission_tests {
         let value: serde_json::Value = serde_json::from_slice(&fs::read(status_path(&dir)).unwrap()).unwrap();
         assert!(value["me"].get("permissions").is_none());
         fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod hangul_settings_tests {
+    use super::*;
+    #[test]
+    fn defaults_old_packets_and_master_propagation() {
+        let old: NetConfig = serde_json::from_str("{}").unwrap();
+        assert!(old.mac_capslock_to_hangul && old.mac_shift_space_to_hangul);
+        let old: MasterSettings = serde_json::from_str("{}").unwrap();
+        assert!(old.mac_capslock_to_hangul && old.mac_shift_space_to_hangul);
+        let master = NetConfig { mac_capslock_to_hangul: false, mac_shift_space_to_hangul: false, ..NetConfig::default() };
+        let settings = MasterSettings::of(&master, "Mac");
+        let packet = serde_json::to_string(&settings).unwrap();
+        let settings: MasterSettings = serde_json::from_str(&packet).unwrap();
+        let mut sub = NetConfig::default();
+        settings.apply_to(&mut sub);
+        assert!(!sub.mac_capslock_to_hangul && !sub.mac_shift_space_to_hangul);
+        MasterSettings::of(&NetConfig::default(), "Mac").apply_to(&mut sub);
+        assert!(sub.mac_capslock_to_hangul && sub.mac_shift_space_to_hangul);
     }
 }

@@ -102,7 +102,7 @@ Store 패키지 버전은 네 자리이고, **첫 자리가 0이면 안 되며**
 
 flockswitch는 Logitech MX Master 마우스의 휠 모드 전환 버튼, 제스처 버튼, 휠 클릭 중 고른 버튼을 Easy-Switch 버튼으로 바꿉니다. 버튼을 누르면 함께 묶은 키보드와 다른 마우스가 먼저, 마우스가 마지막으로 같은 Easy-Switch 채널로 이동합니다.
 
-컴퓨터끼리 네트워크로 연결할 필요가 없어서 Logitech Flow를 쓸 수 없는 공용·보안 네트워크에서도 동작합니다. 오가는 모든 컴퓨터에 flockswitch를 설치하세요(macOS 버전도 있습니다).
+Logitech 채널 전환은 컴퓨터끼리 네트워크로 연결할 필요가 없어서 Logitech Flow를 쓸 수 없는 공용·보안 네트워크에서도 동작합니다. 오가는 모든 컴퓨터에 flockswitch를 설치하세요(macOS 버전도 있습니다).
 
 • 버튼마다 이동할 채널 지정. 이 PC의 채널은 자동으로 잠김
 • 제스처 버튼: 누른 채 위·아래·왼쪽·오른쪽으로 움직여 채널 선택
@@ -121,9 +121,9 @@ Press one mouse button to move your Logitech mouse and keyboard to another compu
 
 ### Description (en-US)
 
-flockswitch turns a button of your Logitech MX Master mouse — the wheel mode-shift button, the gesture button or the wheel click — into an Easy-Switch key. Press it and your keyboard and other devices switch to the same Easy-Switch channel, then the mouse follows.
+flockswitch turns a button of your Logitech MX Master mouse - the wheel mode-shift button, the gesture button or the wheel click - into an Easy-Switch key. Press it and your keyboard and other devices switch to the same Easy-Switch channel, then the mouse follows.
 
-It needs no network between the computers, so it works where Logitech Flow cannot (guest or locked-down networks). Install flockswitch on every computer you switch between (a macOS version is available too).
+Logitech channel switching needs no network between the computers, so it works where Logitech Flow cannot (guest or locked-down networks). Install flockswitch on every computer you switch between (a macOS version is available too).
 
 • Choose the channel each button goes to; this PC's own channel is locked automatically
 • Gesture button: hold it and move up, down, left or right to pick a channel
@@ -142,7 +142,7 @@ Logitech, Easy-Switch, MX Master, mouse, keyboard, KVM, multi computer
 
 ### runFullTrust 사유 (영어로 입력)
 
-flockswitch is a desktop utility for Logitech mice. It needs full trust to: open the Logitech receiver and Bluetooth HID devices and exchange HID++ reports with them (to catch the chosen mouse button and send the Easy-Switch "change host" command); show a notification-area (tray) icon and menu; register global keyboard shortcuts; and start its own settings window as a second process. Its only network use is asking the Microsoft Store for a newer package (Windows.Services.Store), which the user can turn off; it writes only to its own settings folder.
+flockswitch is a desktop utility for Logitech mice. It needs full trust to: open the Logitech receiver and Bluetooth HID devices and exchange HID++ reports with them (to catch the chosen mouse button and send the Easy-Switch "change host" command); show a notification-area (tray) icon and menu; register global keyboard shortcuts; and start its own settings window as a second process. It also captures and forwards input and clipboard content to the user’s paired computers over the local network (mDNS discovery and authenticated TLS), saves received files in Downloads/flockswitch, and asks the Microsoft Store for updates (Windows.Services.Store), which the user can turn off.
 
 ### 인증 참고 사항 (영어로 입력)
 
@@ -152,4 +152,4 @@ The app starts quietly as an icon in the notification area (it may be in the hid
 
 With the mouse: turn on a button in Settings → Switching and choose a channel in "Go to channel"; pressing that mouse button sends the mouse (and any devices chosen in the Devices tab) to that Easy-Switch channel, i.e. to another computer.
 
-The app starts at login through its startup task (switchable in Settings → Apps → Startup). Its only network use is Settings → General → Updates, which asks the Microsoft Store (Windows.Services.Store) for a newer package at start and once a day and, with "Install new versions automatically" on, installs it quietly; both can be switched off there. It needs no account. Source code: https://github.com/WWhaleFe/flockswitch-windows
+The app starts at login through its startup task (switchable in Settings → Apps → Startup). It shares mouse, keyboard and clipboard only between the user’s paired computers on the local network (mDNS discovery and authenticated TLS, default TCP port 47160). Internet access is limited to Settings → General → Updates, which asks the Microsoft Store (Windows.Services.Store) for a newer package at start and once a day and, with "Install new versions automatically" on, installs it quietly; both can be switched off there. It needs no account. Source code: https://github.com/WWhaleFe/flockswitch-windows

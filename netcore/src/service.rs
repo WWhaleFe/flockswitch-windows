@@ -107,6 +107,7 @@ impl Service {
             next_transfer: 1,
             buttons: HashSet::new(),
             captured_keys: HashSet::new(),
+            mac_hangul: keymap::MacHangul::default(),
             discovery: None,
             discovered: vec![],
             edge_wait: None,
@@ -302,6 +303,7 @@ struct Control {
     next_transfer: u32,
     buttons: HashSet<MouseButton>,
     captured_keys: HashSet<u16>,
+    mac_hangul: keymap::MacHangul,
     discovery: Option<Discovery>,
     discovered: Vec<DiscoveredPeer>,
     edge_wait: Option<(Side, Instant)>,
@@ -475,6 +477,8 @@ impl Control {
         }
         if config.swap_cmd_ctrl != self.config.swap_cmd_ctrl
             || config.lang1_on_mac != self.config.lang1_on_mac
+            || config.mac_capslock_to_hangul != self.config.mac_capslock_to_hangul
+            || config.mac_shift_space_to_hangul != self.config.mac_shift_space_to_hangul
         {
             self.local(true);
         }
@@ -954,6 +958,7 @@ impl Control {
         }
         self.release();
         self.captured_keys.clear();
+        self.mac_hangul = keymap::MacHangul::default();
         self.edge_wait = None;
         self.edge_hit = None;
         self.outward = false;
@@ -1026,19 +1031,17 @@ impl Control {
                 self.local(true);
                 return;
             }
-            if let Some(l) = self.links.get(&peer) {
-                *usage = keymap::swap_cmd_ctrl(
-                    *usage,
-                    self.platform.os(),
-                    l.os,
-                    self.config.swap_cmd_ctrl,
-                );
-            }
         }
         if let Some(l) = self.links.get(&peer) {
-            l.send(Msg::Input(event));
+            for mut event in self.mac_hangul.map(event, self.platform.os(), l.os, &self.config, &self.captured_keys) {
+                if let InputEvent::Key { usage, .. } = &mut event {
+                    *usage = keymap::swap_cmd_ctrl(*usage, self.platform.os(), l.os, self.config.swap_cmd_ctrl);
+                }
+                l.send(Msg::Input(event));
+            }
         }
     }
+
     fn switch_channel(&self, id: &str) {
         if let Some(p) = self.config.peers.iter().find(|p| p.id == id) {
             if (1..=3).contains(&p.logitech_channel) {
@@ -1069,6 +1072,7 @@ impl Control {
             pos,
         };
         self.captured_keys.clear();
+        self.mac_hangul = keymap::MacHangul::default();
         self.switch_channel(&peer);
     }
     fn cross_on_request(&mut self, side: Side, pos: f64) {

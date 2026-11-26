@@ -8,7 +8,7 @@
 //!   with Windows' own curl.exe (no account, nothing about the user is sent), https
 //!   only. The file must match the SHA256SUMS.txt published with the release. Then the
 //!   setup program runs silently (it asks this copy to quit and starts the new one), or
-//!   the portable flockswitch2.exe is swapped and the new one started, which takes over
+//!   the portable flockswitch.exe is swapped and the new one started, which takes over
 //!   from this copy (see `already_running` in main.rs).
 
 use crate::shared::Shared;
@@ -19,8 +19,8 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const RELEASES_API: &str = "https://api.github.com/repos/WWhaleFe/flockswitch2/releases/latest";
-pub const RELEASES_PAGE: &str = "https://github.com/WWhaleFe/flockswitch2/releases/latest";
+const RELEASES_API: &str = "https://api.github.com/repos/WWhaleFe/flockswitch-windows/releases/latest";
+pub const RELEASES_PAGE: &str = "https://github.com/WWhaleFe/flockswitch-windows/releases/latest";
 /// The app's page in the Microsoft Store app.
 pub const STORE_PAGE: &str = "ms-windows-store://pdp/?ProductId=9NN9ZLHLGSKN";
 /// How often the running app looks for a new version.
@@ -151,7 +151,7 @@ pub fn remove_leftovers() {
 }
 
 fn download_dir() -> PathBuf {
-    std::env::temp_dir().join("flockswitch2-update")
+    std::env::temp_dir().join("flockswitch-update")
 }
 
 /// "1.2.10" > "1.2.9"; parts that are not numbers count as 0.
@@ -252,9 +252,9 @@ mod github {
     pub(super) fn pick_asset<'a>(names: &[&'a str], installed: bool) -> Option<&'a str> {
         names.iter().copied().find(|n| {
             if installed {
-                n.starts_with("flockswitch2-setup-") && n.ends_with(".exe")
+                n.starts_with("flockswitch-setup-") && n.ends_with(".exe")
             } else {
-                n.starts_with("flockswitch2-windows-portable-") && n.ends_with(".zip")
+                n.starts_with("flockswitch-windows-portable-") && n.ends_with(".zip")
             }
         })
     }
@@ -308,7 +308,7 @@ mod github {
         }
     }
 
-    /// Puts the new flockswitch2.exe from the portable zip in place of this one and starts
+    /// Puts the new flockswitch.exe from the portable zip in place of this one and starts
     /// it; it asks this copy to quit and takes over. The folder's other files (readme,
     /// licence) are refreshed as well.
     fn swap_portable(zip: &Path) -> Result<()> {
@@ -322,10 +322,10 @@ mod github {
         if !out.status.success() {
             bail!("cannot unpack {}: {}", zip.display(), String::from_utf8_lossy(&out.stderr).trim());
         }
-        let from = unpacked.join("flockswitch2");
-        let new_exe = from.join("flockswitch2.exe");
+        let from = unpacked.join("flockswitch");
+        let new_exe = from.join("flockswitch.exe");
         if !new_exe.is_file() {
-            bail!("{} has no flockswitch2\\flockswitch2.exe", zip.display());
+            bail!("{} has no flockswitch\\flockswitch.exe", zip.display());
         }
         let old = dir.join(OLD_EXE);
         let _ = std::fs::remove_file(&old);
@@ -336,7 +336,7 @@ mod github {
         }
         for entry in std::fs::read_dir(&from)?.flatten() {
             let name = entry.file_name();
-            if name != "flockswitch2.exe" && entry.path().is_file() {
+            if name != "flockswitch.exe" && entry.path().is_file() {
                 let _ = std::fs::copy(entry.path(), dir.join(&name));
             }
         }
@@ -420,6 +420,7 @@ mod tests {
     fn versions() {
         assert!(is_newer("1.6.0", "1.5.0"));
         assert!(is_newer("1.10.0", "1.9.9"));
+        assert!(is_newer("2.0.0", "1.10.0"));
         assert!(!is_newer("1.6.0", "1.6.0"));
         assert!(!is_newer("1.5.9", "1.6.0"));
         assert!(!is_newer("1.6", "1.6.0"));
@@ -427,17 +428,17 @@ mod tests {
 
     #[test]
     fn assets() {
-        let names = ["flockswitch2-setup-1.6.0.exe", "flockswitch2-windows-portable-1.6.0.zip", "SHA256SUMS.txt"];
-        assert_eq!(pick_asset(&names, true), Some("flockswitch2-setup-1.6.0.exe"));
-        assert_eq!(pick_asset(&names, false), Some("flockswitch2-windows-portable-1.6.0.zip"));
+        let names = ["flockswitch-setup-1.6.0.exe", "flockswitch-windows-portable-1.6.0.zip", "SHA256SUMS.txt"];
+        assert_eq!(pick_asset(&names, true), Some("flockswitch-setup-1.6.0.exe"));
+        assert_eq!(pick_asset(&names, false), Some("flockswitch-windows-portable-1.6.0.zip"));
         assert_eq!(pick_asset(&["SHA256SUMS.txt"], false), None);
     }
 
     #[test]
     fn checksums() {
         let h = "a".repeat(64);
-        let sums = format!("{}  flockswitch2-setup-1.6.0.exe\n{h} *other.zip\n", "B".repeat(64));
-        assert_eq!(expected_sha256(&sums, "flockswitch2-setup-1.6.0.exe"), Some("b".repeat(64)));
+        let sums = format!("{}  flockswitch-setup-1.6.0.exe\n{h} *other.zip\n", "B".repeat(64));
+        assert_eq!(expected_sha256(&sums, "flockswitch-setup-1.6.0.exe"), Some("b".repeat(64)));
         assert_eq!(expected_sha256(&sums, "other.zip"), Some(h));
         assert_eq!(expected_sha256(&sums, "missing.zip"), None);
     }

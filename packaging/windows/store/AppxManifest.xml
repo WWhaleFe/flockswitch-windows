@@ -15,8 +15,7 @@
 
   <Identity Name="@IDENTITY_NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
 
-  <!-- DisplayName must be a name reserved in Partner Center. flockswitch2 needs its own
-       reservation (separate product from "Flockswitch"); not done yet. -->
+  <!-- Keep the reserved 1.x Store name and product identity. -->
   <Properties>
     <DisplayName>Flockswitch</DisplayName>
     <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
@@ -35,7 +34,7 @@
   </Resources>
 
   <Applications>
-    <Application Id="flockswitch2" Executable="flockswitch2.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="flockswitch" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="Flockswitch"
         Description="Share one mouse and keyboard between computers over the network, with Logitech Easy-Switch buttons and channels"
@@ -47,21 +46,22 @@
              Settings → Apps → Startup (the Run registry key is not used from a package).
              The parameters (tray, then the login flag) keep that start quiet: no
              settings window. A double hyphen is not allowed in an XML comment. -->
-        <desktop:Extension Category="windows.startupTask" Executable="flockswitch2.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="tray --login">
-          <desktop:StartupTask TaskId="flockswitch2" Enabled="true" DisplayName="flockswitch2" />
+        <desktop:Extension Category="windows.startupTask" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="tray --login">
+          <desktop:StartupTask TaskId="flockswitch" Enabled="true" DisplayName="flockswitch" />
         </desktop:Extension>
-        <!-- `flockswitch2 settings` and the other commands from a terminal. -->
-        <uap3:Extension Category="windows.appExecutionAlias" Executable="flockswitch2.exe" EntryPoint="Windows.FullTrustApplication">
+        <!-- `flockswitch settings` and the other commands from a terminal. -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
-            <desktop:ExecutionAlias Alias="flockswitch2.exe" />
+            <desktop:ExecutionAlias Alias="flockswitch.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>
 
-  <!-- A desktop app: shares the mouse and keyboard over the local network, shows a tray
-       icon, registers a keyboard shortcut and starts its own settings window. -->
+  <!-- A desktop app: talks HID++ to Logitech receivers, shares the mouse and keyboard over
+       the local network, shows a tray icon, registers keyboard shortcuts and starts its
+       own settings window. -->
   <Capabilities>
     <Capability Name="privateNetworkClientServer" />
     <rescap:Capability Name="runFullTrust" />

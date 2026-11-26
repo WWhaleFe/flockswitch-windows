@@ -1,5 +1,12 @@
 # Microsoft Store 목록 개편안 (1.7.0)
 
+## 2.0.0 제출용 변경 사항 / What’s new
+
+마스터·서브 간 마우스·키보드·클립보드 로컬 네트워크 공유와 페어링·화면 배치를 추가했습니다. Logitech 기능을 유지하고 설정 화면을 새로 구성했습니다. 네트워크 공유가 가장자리를 맡으며 Logitech 가장자리를 켜면 네트워크 넘기기가 일시 정지됩니다. 맥 Caps Lock·Shift+Space 한/영 전환은 맥에서 설정합니다. 1.x 설정과 Store 식별자를 유지합니다.
+
+Share mouse, keyboard and clipboard between paired master/sub computers on the local network. Refreshed settings include pairing and screen layout, with existing Logitech features retained. Network sharing takes the edges; Logitech edges pause network crossing. Configure Mac Caps Lock and Shift+Space Korean/English switching on the Mac. Keeps 1.x settings and Store identity.
+
+
 작성: 2026-11-10 · 대상: Partner Center → Flockswitch(9NN9ZLHLGSKN) → Store listings (ko-KR, en-US)
 기준 화면: Windows 1.7.0. 설명은 1.7.0 화면의 메뉴·탭·문구와 기본값을 그대로 따릅니다(코드로 확인).
 적용: 1.7.0 패키지, 새 설명, 새 스크린샷을 한 제출로 올립니다.
@@ -70,7 +77,7 @@
 ```
 마우스 버튼 한 번으로 Logitech 마우스와 키보드를 함께 다른 컴퓨터로 넘깁니다.
 
-Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 하나씩 기억해 두고 오갈 수 있습니다. 하지만 원래는 키보드의 채널 버튼, 마우스 바닥의 채널 버튼을 기기마다 따로 눌러야 합니다. flockswitch는 이 전환을 마우스 버튼 하나, 키보드 단축키, 또는 화면 가장자리로 한 번에 해 줍니다. 컴퓨터끼리 네트워크로 연결하지 않으므로, Logitech Flow를 쓸 수 없는 회사·공용·보안 네트워크에서도 동작합니다.
+Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 하나씩 기억해 두고 오갈 수 있습니다. 하지만 원래는 키보드의 채널 버튼, 마우스 바닥의 채널 버튼을 기기마다 따로 눌러야 합니다. flockswitch는 이 전환을 마우스 버튼 하나, 키보드 단축키, 또는 화면 가장자리로 한 번에 해 줍니다. Logitech 채널 전환은 컴퓨터끼리 네트워크로 연결하지 않으므로, Logitech Flow를 쓸 수 없는 회사·공용·보안 네트워크에서도 동작합니다.
 
 ■ 이런 분께 필요합니다
 • 한 책상에서 데스크톱과 노트북처럼 컴퓨터 두세 대를 키보드·마우스 한 벌로 쓰는 분
@@ -140,7 +147,7 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)에 컴퓨터를 �
 • Logi Options+와 함께 쓰는 것을 전제로 합니다.
 
 ■ 개인정보와 안전
-• 이 PC에 연결된 Logitech 장치와만 통신합니다. 계정이 없으며, 어떤 정보도 수집하거나 보내지 않습니다. 인터넷 연결은 Microsoft Store에 새 버전을 묻는 것뿐이고, 설정에서 끌 수 있습니다.
+• 이 PC의 Logitech 장치 및 로컬 네트워크에서 페어링한 내 컴퓨터와 통신합니다. 계정이나 원격 수집 서버는 없습니다. 인터넷 연결은 Microsoft Store에 새 버전을 묻는 것뿐이고, 설정에서 끌 수 있습니다.
 • 드라이버나 서비스를 설치하지 않습니다. flockswitch를 끄거나 종료하면 버튼이 원래 설정 그대로 돌아갑니다.
 • 로그인할 때 창 없이 알림 영역에서 조용히 시작합니다. 자동 실행은 Windows 설정 → 앱 → 시작 프로그램에서 끌 수 있습니다.
 
@@ -159,7 +166,7 @@ Logitech과 관계없는 개인 오픈소스(MIT)입니다. Logitech, MX Master,
 ### 4-2. 짧은 설명 (Short description)
 
 ```
-마우스 버튼 한 번, 단축키, 또는 화면 가장자리로 Logitech 마우스와 키보드를 함께 다른 컴퓨터로 넘깁니다. 컴퓨터끼리 네트워크 연결 없이 동작합니다.
+마우스 버튼 한 번, 단축키, 또는 화면 가장자리로 Logitech 마우스와 키보드를 함께 다른 컴퓨터로 넘깁니다. Logitech 채널 전환은 컴퓨터끼리 네트워크 연결 없이 동작합니다.
 ```
 
 ### 4-3. 이번 버전의 새로운 기능 (What's new in this version)
@@ -205,7 +212,7 @@ Logi Bolt·Unifying·블루투스 장치를 섞어서 함께 이동
 마우스 찾기: 단축키·도착·흔들기로 커서 강조(흔드는 시간·함께 누를 키 선택)
 설정 백업: 파일로 저장(최대 10개)·이름 바꾸기·삭제, 다른 PC에서 불러오기
 MX Master 4 진동: 떠날 때·돌아왔을 때·모서리 대기, 진동 확인
-컴퓨터끼리 네트워크 연결 없이 동작
+Logitech 채널 전환은 컴퓨터끼리 네트워크 연결 없이 동작
 Microsoft Store 자동 업데이트(켜고 끌 수 있음)
 계정·데이터 수집 없음
 드라이버·서비스 설치 없음, 끄면 버튼이 원래대로
@@ -229,7 +236,7 @@ mouse switch, keyboard switch, multi computer, KVM, multi PC, channel switch, ed
 ```
 Press one mouse button and your Logitech mouse and keyboard move to another computer together.
 
-Logitech mice and keyboards remember one computer on each Easy-Switch channel (1, 2, 3) and can hop between them. Normally, though, you press the channel button on the keyboard and the one under the mouse separately, device by device. flockswitch does it in one go: from a mouse button, a keyboard shortcut or the edge of the screen. The computers are not networked together, so it works where Logitech Flow cannot, such as office, guest or locked-down networks.
+Logitech mice and keyboards remember one computer on each Easy-Switch channel (1, 2, 3) and can hop between them. Normally, though, you press the channel button on the keyboard and the one under the mouse separately, device by device. flockswitch does it in one go: from a mouse button, a keyboard shortcut or the edge of the screen. Logitech channel switching needs no network between computers, so it works where Logitech Flow cannot, such as office, guest or locked-down networks.
 
 ■ Who it is for
 • You use two or three computers at one desk, say a desktop and a laptop, with one keyboard and mouse
@@ -258,7 +265,7 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 
 [Settings → Switching tab]
 • Switch with mouse buttons: on or off for everything. Off gives the buttons their own functions back.
-• Per button: five pages — Wheel mode, Gesture, Wheel click, Shortcuts and Edges.
+• Per button: five pages - Wheel mode, Gesture, Wheel click, Shortcuts and Edges.
 • Wheel mode and Wheel click: turn the button on and choose "Go to channel". This computer's own channel is locked so you can't pick it. With Wheel click on, pressing the wheel switches instead of doing its usual job.
 • Gesture: "Press", and hold-and-move up, down, left or right, then release. Each of the five has its own channel. With any direction on, the cursor stays still while the button is held.
 • Shortcuts: one keyboard shortcut per channel (Ctrl+Alt+1/2/3 by default). "Change" records a new combination, "Clear" removes it. Any keyboard works. Hover the ⓘ beside the title to see which combinations work (Ctrl or Alt with a letter or number, or an F key) and which do not (Windows key combinations, ones another app already uses and so on).
@@ -299,7 +306,7 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 • Meant to run alongside Logi Options+.
 
 ■ Privacy and safety
-• It talks only to the Logitech devices connected to this PC. No account, nothing collected or sent. Its only internet use is asking the Microsoft Store for a new version, which you can turn off in the settings.
+• It talks to this PC’s Logitech devices and your paired computers on the local network. No account or remote collection server. Its only internet use is asking the Microsoft Store for a new version, which you can turn off in the settings.
 • No drivers or services are installed. Turn flockswitch off or quit it and the buttons go back to exactly how they were.
 • It starts quietly in the notification area at sign-in, with no window. Turn that off in Windows Settings → Apps → Startup.
 
@@ -318,7 +325,7 @@ An independent open-source project (MIT), not affiliated with Logitech. Logitech
 ### 5-2. Short description
 
 ```
-Move your Logitech mouse and keyboard to another computer together with one mouse button, a shortcut or the screen edge. The computers need no network between them.
+Move your Logitech mouse and keyboard to another computer together with one mouse button, a shortcut or the screen edge. Logitech channel switching needs no network between computers.
 ```
 
 ### 5-3. What's new in this version
@@ -364,7 +371,7 @@ Mix Logi Bolt, Unifying and Bluetooth devices in one group
 Find the cursor from a shortcut, on arrival or by shaking the mouse (how long, and a key to hold)
 Settings backup: save up to 10 files, rename or delete them, load on another PC
 MX Master 4 haptics as the mouse leaves, comes back and waits, with Test
-No network needed between the computers
+No network needed for Logitech channel switching
 Automatic updates from the Microsoft Store (can be turned off)
 No account, no data collected
 No drivers or services; buttons go back to normal when off

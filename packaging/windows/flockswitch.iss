@@ -1,5 +1,5 @@
 ; Windows installer (Inno Setup 6). Installs for the current user only, so no
-; administrator rights are needed: %LOCALAPPDATA%\Programs\flockswitch2.
+; administrator rights are needed: %LOCALAPPDATA%\Programs\flockswitch.
 ; Built by the release workflow:
 ;   ISCC /DAppVersion=0.3.1 /DSourceDir=<files> /DIconFile=<ico> /DOutputDir=<dir> flockswitch.iss
 
@@ -8,22 +8,22 @@
 #endif
 
 [Setup]
-AppId={{71155DB9-CBDB-4959-B0F8-2A9452A9C337}
-AppName=flockswitch2
+AppId={{8F2B6C1E-4D7A-4C2B-9E61-3A5F0D2C7B41}
+AppName=flockswitch
 AppVersion={#AppVersion}
 AppPublisher=WWhaleFe
-AppPublisherURL=https://github.com/WWhaleFe/flockswitch2
-AppSupportURL=https://github.com/WWhaleFe/flockswitch2/issues
-DefaultDirName={autopf}\flockswitch2
+AppPublisherURL=https://github.com/WWhaleFe/flockswitch-windows
+AppSupportURL=https://github.com/WWhaleFe/flockswitch-windows/issues
+DefaultDirName={autopf}\flockswitch
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=flockswitch2-setup-{#AppVersion}
+OutputBaseFilename=flockswitch-setup-{#AppVersion}
 SetupIconFile={#IconFile}
-UninstallDisplayIcon={app}\flockswitch2.exe
-UninstallDisplayName=flockswitch2
+UninstallDisplayIcon={app}\flockswitch.exe
+UninstallDisplayName=flockswitch
 LicenseFile={#SourceDir}\LICENSE
 WizardStyle=modern
 Compression=lzma2
@@ -44,33 +44,33 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 
 [Icons]
-Name: "{autoprograms}\flockswitch2"; Filename: "{app}\flockswitch2.exe"
-Name: "{autoprograms}\flockswitch2 Settings"; Filename: "{app}\flockswitch2.exe"; Parameters: "settings"
-Name: "{autodesktop}\flockswitch2"; Filename: "{app}\flockswitch2.exe"; Tasks: desktopicon
+Name: "{autoprograms}\flockswitch"; Filename: "{app}\flockswitch.exe"
+Name: "{autoprograms}\flockswitch Settings"; Filename: "{app}\flockswitch.exe"; Parameters: "settings"
+Name: "{autodesktop}\flockswitch"; Filename: "{app}\flockswitch.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\flockswitch2.exe"; Description: "{cm:LaunchProgram,flockswitch2}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\flockswitch.exe"; Description: "{cm:LaunchProgram,flockswitch}"; Flags: nowait postinstall skipifsilent
 ; A silent install is flockswitch updating itself: start the new version again, quietly.
-Filename: "{app}\flockswitch2.exe"; Parameters: "tray --login"; Flags: nowait runasoriginaluser; Check: WizardSilent
+Filename: "{app}\flockswitch.exe"; Parameters: "tray --login"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 ; Gives the mouse button back, removes start-at-login and the settings, quits the app.
-Filename: "{app}\flockswitch2.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "flockswitch2-uninstall"
+Filename: "{app}\flockswitch.exe"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "flockswitch-uninstall"
 
 [Code]
-// Upgrading: let the running flockswitch2 hand the button back and quit first.
+// Upgrading: let the running flockswitch hand the button back and quit first.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Code: Integer;
 begin
   Result := '';
-  if FileExists(ExpandConstant('{app}\flockswitch2.exe')) then
+  if FileExists(ExpandConstant('{app}\flockswitch.exe')) then
   begin
-    Exec(ExpandConstant('{app}\flockswitch2.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Exec(ExpandConstant('{app}\flockswitch.exe'), 'quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
     // A settings window still open from this folder would keep the program file in use.
     Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-      '-NoProfile -NonInteractive -Command "Get-Process flockswitch2 -ErrorAction SilentlyContinue | ' +
-      'Where-Object { $_.Path -eq ''' + ExpandConstant('{app}\flockswitch2.exe') + ''' } | Stop-Process -Force"',
+      '-NoProfile -NonInteractive -Command "Get-Process flockswitch -ErrorAction SilentlyContinue | ' +
+      'Where-Object { $_.Path -eq ''' + ExpandConstant('{app}\flockswitch.exe') + ''' } | Stop-Process -Force"',
       '', SW_HIDE, ewWaitUntilTerminated, Code);
   end;
 end;

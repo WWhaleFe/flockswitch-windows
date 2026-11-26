@@ -255,7 +255,7 @@ fn scenario_mode(receiver: Os, no_cursor: bool) {
     }
     assert_eq!(channels.recv_timeout(Duration::from_secs(1)).unwrap(), 2);
     assert_eq!(b.cursor().unwrap().0, 2.0);
-    let events = vec![
+    let mut events = vec![
         InputEvent::Motion { dx: 10.0, dy: 4.0 },
         InputEvent::Key {
             usage: 0xe3,
@@ -274,10 +274,15 @@ fn scenario_mode(receiver: Os, no_cursor: bool) {
             down: false,
         },
     ];
+    let shortcut_start = events.len();
+    let shortcut = |usage, down| InputEvent::Key { usage, down };
+    events.extend([
+        shortcut(0x39, true), shortcut(0x39, false),
+        shortcut(0xe1, true), shortcut(0x2c, true), shortcut(0x2c, false), shortcut(0xe1, false),
+    ]);
     for e in &events {
         a.send(e.clone());
     }
-    wait("input delivery", || b.records().len() >= events.len());
     let mut expected = events.clone();
     if receiver == Os::Windows {
         expected[1] = InputEvent::Key {
@@ -289,6 +294,16 @@ fn scenario_mode(receiver: Os, no_cursor: bool) {
             down: false,
         };
     }
+    if receiver == Os::Windows {
+        expected.truncate(shortcut_start);
+        expected.extend([
+            shortcut(0x90, true), shortcut(0x90, false),
+            shortcut(0xe1, true), shortcut(0xe1, false),
+            shortcut(0x90, true), shortcut(0x90, false),
+            shortcut(0xe1, true), shortcut(0xe1, false),
+        ]);
+    }
+    wait("input delivery", || b.records().len() >= expected.len());
     assert_eq!(&b.records()[..expected.len()], expected.as_slice());
     b.warp(0.0, 54.0);
     wait("Leave", || {

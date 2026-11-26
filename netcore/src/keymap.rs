@@ -4,6 +4,45 @@ pub const LANG2: u16 = 0x91;
 pub const VK_HANGUL: u16 = 0x15;
 pub const VK_HANJA: u16 = 0x19;
 
+/// Sending-side Mac shortcuts. Physical held keys stay in the service's key set;
+/// temporary Shift releases only affect the Windows input stream.
+#[derive(Default)]
+pub(crate) struct MacHangul {
+    space: bool,
+}
+impl MacHangul {
+    pub(crate) fn map(
+        &mut self, event: crate::InputEvent, sender: Os, receiver: Os,
+        config: &crate::NetConfig, held: &std::collections::HashSet<u16>,
+    ) -> Vec<crate::InputEvent> {
+        use crate::InputEvent::Key;
+        if sender != Os::Mac || receiver != Os::Windows { return vec![event]; }
+        let Key { usage, down } = event else { return vec![event]; };
+        let tap = || vec![Key { usage: LANG1, down: true }, Key { usage: LANG1, down: false }];
+        // The Mac capture adapter turns each Caps Lock flagsChanged flip into a
+        // down/up pair. Emit one Hangul tap on down and swallow its synthetic up.
+        if usage == 0x39 && config.mac_capslock_to_hangul {
+            return if down { tap() } else { vec![] };
+        }
+        if usage == 0x2c {
+            if self.space {
+                if !down { self.space = false; }
+                return vec![]; // Includes autorepeat, and the matching Space up.
+            }
+            let shifts: Vec<_> = [0xe1, 0xe5].into_iter().filter(|u| held.contains(u)).collect();
+            let other = [0xe0, 0xe2, 0xe3, 0xe4, 0xe6, 0xe7].iter().any(|u| held.contains(u));
+            if down && config.mac_shift_space_to_hangul && !shifts.is_empty() && !other {
+                self.space = true;
+                let mut events: Vec<_> = shifts.iter().map(|&usage| Key { usage, down: false }).collect();
+                events.extend(tap());
+                events.extend(shifts.into_iter().map(|usage| Key { usage, down: true }));
+                return events;
+            }
+        }
+        vec![event]
+    }
+}
+
 /// Native macOS key codes. macOS defines no kVK codes for F21-F24.
 pub const MAC_KEYS: &[(u16, u16)] = &[
     (0x04, 0x00),
@@ -348,5 +387,71 @@ mod tests {
         assert_eq!(swap_cmd_ctrl(0xe3, Os::Mac, Os::Mac, true), 0xe3);
         assert_eq!(swap_cmd_ctrl(0xe3, Os::Mac, Os::Windows, true), 0xe0);
         assert_eq!(swap_cmd_ctrl(0xe0, Os::Windows, Os::Mac, true), 0xe3);
+    }
+}
+
+#[cfg(test)]
+mod mac_hangul_tests {
+    use super::*;
+    use crate::{InputEvent, NetConfig};
+    use std::collections::HashSet;
+    fn key(usage: u16, down: bool) -> InputEvent { InputEvent::Key { usage, down } }
+    fn run(sender: Os, receiver: Os, config: NetConfig, input: Vec<InputEvent>) -> Vec<InputEvent> {
+        let mut mapper = MacHangul::default();
+        let mut held = HashSet::new();
+        input.into_iter().flat_map(|event| {
+            if let InputEvent::Key { usage, down } = &event {
+                if *down { held.insert(*usage); } else { held.remove(usage); }
+            }
+            mapper.map(event, sender, receiver, &config, &held)
+        }).collect()
+    }
+    #[test]
+    fn capslock_each_flip_is_one_hangul_tap() {
+        let input = vec![key(0x39, true), key(0x39, false), key(0x39, true), key(0x39, false)];
+        assert_eq!(run(Os::Mac, Os::Windows, NetConfig::default(), input),
+            vec![key(LANG1, true), key(LANG1, false), key(LANG1, true), key(LANG1, false)]);
+    }
+    #[test]
+    fn shift_space_releases_and_restores_both_shifts_and_swallows_repeat_and_up() {
+        let input = vec![key(0xe1, true), key(0xe5, true), key(0x2c, true), key(0x2c, true),
+            key(0xe1, false), key(0x2c, false), key(0xe5, false), key(0x2c, true), key(0x2c, false)];
+        assert_eq!(run(Os::Mac, Os::Windows, NetConfig::default(), input), vec![
+            key(0xe1, true), key(0xe5, true), key(0xe1, false), key(0xe5, false),
+            key(LANG1, true), key(LANG1, false), key(0xe1, true), key(0xe5, true),
+            key(0xe1, false), key(0xe5, false), key(0x2c, true), key(0x2c, false)]);
+    }
+    #[test]
+    fn shortcuts_unchanged_for_other_directions_and_disabled_settings() {
+        let input = vec![key(0x39, true), key(0x39, false), key(0xe1, true),
+            key(0x2c, true), key(0x2c, false), key(0xe1, false)];
+        for (sender, receiver) in [(Os::Mac, Os::Mac), (Os::Mac, Os::Linux),
+            (Os::Windows, Os::Mac), (Os::Windows, Os::Windows), (Os::Windows, Os::Linux)] {
+            assert_eq!(run(sender, receiver, NetConfig::default(), input.clone()), input);
+        }
+        let config = NetConfig { mac_capslock_to_hangul: false, mac_shift_space_to_hangul: false, ..NetConfig::default() };
+        assert_eq!(run(Os::Mac, Os::Windows, config, input.clone()), input);
+    }
+    #[test]
+    fn space_without_shift_or_with_other_modifiers_is_unchanged() {
+        for modifier in [0, 0xe0, 0xe2, 0xe3, 0xe4, 0xe6, 0xe7] {
+            let mut input = vec![key(0x2c, true), key(0x2c, false)];
+            if modifier != 0 {
+                input = vec![key(modifier, true), key(0xe1, true), key(0x2c, true),
+                    key(0x2c, false), key(0xe1, false), key(modifier, false)];
+            }
+            assert_eq!(run(Os::Mac, Os::Windows, NetConfig::default(), input.clone()), input);
+        }
+    }
+    #[test]
+    fn either_shift_alone_works_and_options_are_independent() {
+        for shift in [0xe1, 0xe5] {
+            let config = NetConfig { mac_capslock_to_hangul: false, ..NetConfig::default() };
+            assert_eq!(run(Os::Mac, Os::Windows, config, vec![key(shift, true), key(0x2c, true), key(0x2c, false)]),
+                vec![key(shift, true), key(shift, false), key(LANG1, true), key(LANG1, false), key(shift, true)]);
+        }
+        let config = NetConfig { mac_shift_space_to_hangul: false, ..NetConfig::default() };
+        assert_eq!(run(Os::Mac, Os::Windows, config, vec![key(0x39, true), key(0x39, false)]),
+            vec![key(LANG1, true), key(LANG1, false)]);
     }
 }

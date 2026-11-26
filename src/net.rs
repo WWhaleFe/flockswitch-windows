@@ -615,7 +615,7 @@ impl Platform for WindowsPlatform {
         }
     }
     fn received_dir(&self) -> Option<PathBuf> {
-        Some(dirs::download_dir()?.join("flockswitch2"))
+        Some(dirs::download_dir()?.join("flockswitch"))
     }
     fn ready(&self) -> Result<(), String> {
         Ok(())

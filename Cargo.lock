@@ -1503,7 +1503,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "flockswitch2"
+name = "flockswitch"
 version = "2.0.0"
 dependencies = [
  "anyhow",

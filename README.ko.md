@@ -2,13 +2,23 @@
 
 [English](README.md) · **한국어**
 
-마우스 버튼 한 번으로 Logitech 마우스와 **키보드를 함께** 다른 컴퓨터로 넘깁니다.
+로컬 네트워크로 마우스·키보드·클립보드를 공유하거나 Logitech 장치를 함께 전환합니다.
 
-flockswitch는 MX Master 마우스의 **휠 모드 전환 버튼, 제스처 버튼, 휠 클릭(휠을 눌러 클릭)** 중 고른 버튼을 Easy-Switch 버튼으로 바꿉니다. 누르면 그룹으로 묶은 장치(키보드, 다른 마우스)가 먼저, 마우스가 마지막으로 **같은 Easy-Switch 채널**로 이동합니다. 컴퓨터끼리 네트워크 연결이 필요 없어서 Logitech Flow를 쓸 수 없는 곳(공용 네트워크, 보안이 엄격한 네트워크)에서도 동작합니다.
+flockswitch는 MX Master 마우스의 **휠 모드 전환 버튼, 제스처 버튼, 휠 클릭(휠을 눌러 클릭)** 중 고른 버튼을 Easy-Switch 버튼으로 바꿉니다. 누르면 그룹으로 묶은 장치(키보드, 다른 마우스)가 먼저, 마우스가 마지막으로 **같은 Easy-Switch 채널**로 이동합니다. Logitech 채널 전환은 컴퓨터끼리 네트워크 연결이 필요 없어서 Logitech Flow를 쓸 수 없는 곳(공용 네트워크, 보안이 엄격한 네트워크)에서도 동작합니다.
 
 이 저장소는 Windows 버전이며, [Microsoft Store](https://apps.microsoft.com/detail/9NN9ZLHLGSKN)에도 올라가 있습니다. 다른 버전은 [flockswitch-mac](https://github.com/WWhaleFe/flockswitch-mac), [flockswitch-linux](https://github.com/WWhaleFe/flockswitch-linux), [flockswitch-android](https://github.com/WWhaleFe/flockswitch-android)에 있으며, 모두 같은 방식으로 전환되어 섞어 쓸 수 있습니다.
 
 > Logitech과 관계없는 개인 오픈소스입니다. "Logitech", "MX Master", "Easy-Switch", "Bolt", "Unifying"은 Logitech의 상표입니다.
+
+## 2.0.0: 네트워크 공유
+
+같은 로컬 네트워크에 있는 내 Mac과 Windows 컴퓨터 사이에서 마우스·키보드·클립보드를 공유합니다. 네트워크 공유에는 Logitech 장치가 필수가 아니며, 기존 Easy-Switch 버튼·채널·제스처·햅틱·효과는 그대로 사용할 수 있습니다. 새 설정 화면에서 네트워크와 Logitech 기능을 나누어 설정합니다.
+
+**네트워크**에서 안내에 동의하고 **마스터** 한 대와 **서브** 최대 3대를 정한 뒤, 컴퓨터를 찾아 페어링하고 화면 위치를 배치합니다. 글·이미지·파일을 공유하며 받은 파일은 `다운로드/flockswitch`에 저장합니다. 네트워크 공유를 켜면 화면 가장자리를 맡습니다. Logitech 가장자리를 다시 켜면 네트워크 넘기기가 일시 정지되고, 끄면 다시 동작합니다.
+
+**네트워크 → 키보드·클립보드**의 두 스위치는 맥 Caps Lock과 Shift+Space를 Windows 한/영 키로 바꿔 보냅니다. Windows에서는 비활성화되어 **맥에서 설정합니다** 힌트를 표시합니다. 입력을 보내는 맥에서 설정하세요.
+
+2.0은 1.x 위에 설치되며 `%APPDATA%\flockswitch`, `Documents/flockswitch` 백업, 로그인 항목과 Store 식별자를 유지합니다. 네트워크 설정이 아직 없으면 테스트 빌드의 네트워크 설정과 페어링 식별자를 한 번 가져오고 원본은 보존합니다.
 
 ## 필요한 것
 
@@ -81,7 +91,7 @@ flockswitch는 **MX Master 3**와 **MX Master 4**를 바탕으로 만들고 시�
 
 ## 개인정보
 
-flockswitch는 이 PC에 연결된 Logitech 장치와만 통신합니다. 인터넷 연결은 새 버전 확인과 내려받기뿐이며(끌 수 있음), 사용자에 관한 정보는 보내지 않습니다. (중복 실행을 막으려고 `127.0.0.1`의 포트 하나를 잡아 둘 뿐, 그 포트로 주고받는 데이터는 없습니다.) 전문: [개인정보처리방침](PRIVACY.md#개인정보처리방침--flockswitch-windows).
+flockswitch는 이 PC의 Logitech 장치 및 사용자가 페어링한 로컬 네트워크의 내 컴퓨터와 통신합니다. 인터넷 연결은 새 버전 확인과 내려받기뿐이며(끌 수 있음), 사용자에 관한 정보는 보내지 않습니다. (중복 실행을 막으려고 `127.0.0.1`의 포트 하나를 잡아 둘 뿐, 그 포트로 주고받는 데이터는 없습니다.) 전문: [개인정보처리방침](PRIVACY.md#개인정보처리방침--flockswitch-windows).
 
 ## 문제가 생기면
 

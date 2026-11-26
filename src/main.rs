@@ -33,19 +33,19 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 const USAGE: &str = "\
-flockswitch2 - share input over the network or switch Logitech channels
+flockswitch - share input over the network or switch Logitech channels
 
 USAGE:
-    flockswitch2              start in the notification area (default)
-    flockswitch2 settings     open the settings window
-    flockswitch2 run          run without an icon, logging to the terminal
-    flockswitch2 list         show Logitech devices and channels
-    flockswitch2 switch <N>   switch following devices to channel N (1-3)
-    flockswitch2 config       print the config file path (created on first use)
-    flockswitch2 quit         ask the running flockswitch2 to quit
-    flockswitch2 uninstall    remove start-at-login and all settings (also quits the running
-                             flockswitch2), then delete the program file/folder yourself
-    flockswitch2 set <key> <value>
+    flockswitch              start in the notification area (default)
+    flockswitch settings     open the settings window
+    flockswitch run          run without an icon, logging to the terminal
+    flockswitch list         show Logitech devices and channels
+    flockswitch switch <N>   switch following devices to channel N (1-3)
+    flockswitch config       print the config file path (created on first use)
+    flockswitch quit         ask the running flockswitch to quit
+    flockswitch uninstall    remove start-at-login and all settings (also quits the running
+                             flockswitch), then delete the program file/folder yourself
+    flockswitch set <key> <value>
                             change a setting, e.g.
                               set buttons wheel_mode,gesture   buttons that switch (also: middle)
                               set channels 1,2      channels to cycle through (every button;
@@ -93,15 +93,15 @@ USAGE:
                               set locate.shake_key ctrl        a key held while shaking (none, ctrl, alt, shift)
                               set check_updates true           look for a new version at start and daily
                               set auto_update true             install it and restart (false = only show it)
-    flockswitch2 help
+    flockswitch help
 
 Set RUST_LOG=debug for more detail.";
 
 /// Port used only as a lock so two copies never react to the same button press.
-/// flockswitch uses 47851, so the two programs can run side by side.
-const INSTANCE_PORT: u16 = 47_861;
+/// Keep the 1.x single-instance port so upgrades share one running app.
+const INSTANCE_PORT: u16 = 47_851;
 /// The program's name: login item, message boxes, settings header.
-pub const APP_NAME: &str = "flockswitch2";
+pub const APP_NAME: &str = "flockswitch";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -457,7 +457,7 @@ fn init_logging(file: Option<PathBuf>) {
     builder.init();
 }
 
-/// Lets `flockswitch2.exe list` etc. print to the PowerShell/cmd window it was typed in,
+/// Lets `flockswitch.exe list` etc. print to the PowerShell/cmd window it was typed in,
 /// even though the program is built as a windowed (no console) app.
 fn attach_console() {
     use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
