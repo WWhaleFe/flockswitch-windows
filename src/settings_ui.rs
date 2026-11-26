@@ -1716,7 +1716,7 @@ impl SettingsApp {
         if let Some(chosen) = picker.chosen.filter(|_| load).and_then(|i| picker.files.get(i)).cloned() {
             match backup::load(&chosen.path) {
                 Ok(cfg) => {
-                    self.apply(|c| *c = cfg);
+                    self.apply(|c| *c = backup::restore(c, cfg));
                     match self.error.take() {
                         None => {
                             log::info!("settings loaded from {}", chosen.path.display());
