@@ -100,7 +100,7 @@ pub(super) fn demo_config() -> Config {
     let net = &mut cfg.network;
     net.on = true;
     net.notice_accepted = true;
-    net.name = if language() == "en" { "Windows desktop" } else { "Windows 데스크톱" }.into();
+    net.name = if language() == "en" { "Windows PC" } else { "Windows PC" }.into();
     net.role = NetRole::Master;
     net.peers = (0..3).map(other).collect();
     net.layout = vec![cell(ME, 1, 1), cell(OTHERS[0].0, 2, 1), cell(OTHERS[1].0, 3, 1), cell(OTHERS[2].0, 1, 2)];
