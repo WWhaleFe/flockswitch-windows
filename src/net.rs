@@ -45,6 +45,11 @@ pub fn request_key_rules(keys: &Rules) -> anyhow::Result<()> {
     Outbox::new(key_rules_request_path()).publish(keys)
 }
 
+/// Drops edits waiting for the master (settings reset).
+pub fn clear_key_rules() {
+    Outbox::new(key_rules_request_path()).clear();
+}
+
 /// The running service and the config it runs with, for the edge watcher.
 struct Live {
     service: Arc<Service>,
@@ -79,6 +84,7 @@ pub fn network_side_ready(edge: Edge) -> bool {
     // another sub), as long as its link is up.
     let next = flock_net::layout::neighbour(&status.layout, &status.me.id, side);
     status.running
+        && status.me.can_send
         && status.state.mode == "local"
         && next.is_some_and(|id| status.peers.iter().any(|s| s.id == id && s.connected))
 }
@@ -153,7 +159,7 @@ impl NetState {
         };
         let name = || {
             let id = status.state.peer.as_deref().unwrap_or_default();
-            config.network.peers.iter().find(|p| p.id == id).map_or_else(|| id.to_string(), |p| p.name.clone())
+            flockswitch::peers::peer_name(&config.network, Some(status), id).unwrap_or_else(|| id.to_string())
         };
         match status.state.mode.as_str() {
             "controlling" => NetState::Controlling(name()),
@@ -245,6 +251,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                         let master = shared.clone();
                         let edited = shared.clone();
                         let master_outbox = outbox.clone();
+                        let unpair_outbox = outbox.clone();
                         // No Logitech channels here: `switch_logitech` stays the no-op default.
                         let hooks = flock_net::Hooks {
                             on_paired: Box::new(move |peer| {
@@ -257,9 +264,16 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                             }),
                             on_unpaired: Box::new(move |id| {
                                 if let Err(e) = unpaired
-                                    .update_config(|c| c.network.peers.retain(|p| p.id != id))
+                                    .update_config(|c| {
+                                        c.network.peers.retain(|p| p.id != id);
+                                        c.network.layout.retain(|cell| cell.id != id);
+                                    })
                                 {
                                     log::error!("save unpaired computer: {e:#}");
+                                }
+                                // The edits were for that master (or are moot without one).
+                                if flockswitch::key_rules::undeliverable(&unpaired.config().network, None) {
+                                    unpair_outbox.lock().unwrap().clear();
                                 }
                             }),
                             on_peer_changed: Box::new(move |peer| {
@@ -313,6 +327,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                         name: config.name.clone(),
                                         port: config.port,
                                         error: Some(format!("{e:#}")),
+                                        can_send: true,
                                     },
                                     discovered: vec![],
                                     peers: vec![],
@@ -341,9 +356,13 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                 }
                 // A service command only queues a send. Keep retrying across service
                 // restarts and disconnected links until master settings echo the edit.
-                if config.on && config.role == Role::Sub {
-                    if let Some(s) = &service {
-                        let status = s.status();
+                let live_status = service.as_ref().map(|s| s.status());
+                if flockswitch::key_rules::undeliverable(config, live_status.as_ref()) {
+                    // Unpaired, role changed, reset, or a 2.0 master that ignores edits.
+                    outbox.lock().unwrap().clear();
+                    sent_keys = None;
+                } else if config.on {
+                    if let (Some(s), Some(status)) = (&service, &live_status) {
                         let connected = config.peers.iter().any(|p| p.role == Role::Master
                             && status.peers.iter().any(|live| live.id == p.id && live.connected));
                         if connected {
@@ -355,7 +374,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                             log::warn!("confirm key rules from the master: {e:#}");
                                         }
                                         sent_keys = None;
-                                    } else if sent_keys.as_ref().is_none_or(|(sent, at)| *sent != keys || at.elapsed() >= Duration::from_secs(1)) {
+                                    } else if status.following.is_some() && sent_keys.as_ref().is_none_or(|(sent, at)| *sent != keys || at.elapsed() >= Duration::from_secs(1)) {
                                         match s.send_key_rules(keys.clone()) {
                                             Ok(()) => sent_keys = Some((keys, Instant::now())),
                                             Err(e) => log::warn!("send key rules to the master: {e:#}"),
@@ -936,7 +955,7 @@ mod tests {
         config.network.peers.push(flock_net::PeerConfig { id: "p1".into(), name: "Laptop".into(), ..Default::default() });
         let status = |mode: &str, peer: Option<&str>| flock_net::Status {
             running: true,
-            me: flock_net::MeStatus { id: String::new(), name: String::new(), port: 0, error: None },
+            me: flock_net::MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true },
             discovered: vec![],
             peers: vec![],
             state: flock_net::StateStatus { mode: mode.into(), peer: peer.map(Into::into) },

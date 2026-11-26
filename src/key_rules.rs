@@ -13,6 +13,14 @@ pub fn echoed(keys: &Rules, master: &Rules) -> bool {
         .all(|(pair, rule)| master.get(pair) == Some(rule))
 }
 
+/// Whether pending edits can never be delivered and must go: this is not a sub with a
+/// master any more, or the connected master is a 2.0 one that ignores key rule edits.
+pub fn undeliverable(config: &flock_net::NetConfig, status: Option<&flock_net::Status>) -> bool {
+    let Some(master) = config.peers.iter().find(|p| p.role == flock_net::Role::Master) else { return true };
+    config.role != flock_net::Role::Sub
+        || status.is_some_and(|s| s.peers.iter().any(|p| p.id == master.id && p.connected && !p.keyrules))
+}
+
 fn read(path: &Path) -> anyhow::Result<Option<Rules>> {
     match std::fs::read(path) {
         Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
@@ -73,6 +81,18 @@ impl Outbox {
             Err(e) => return Err(e.into()),
         }
         read(&inflight)
+    }
+
+    /// Drops the in-flight and the queued edit: unpair, role change, reset, or a master
+    /// that cannot take edits.
+    pub fn clear(&self) {
+        for path in [self.path.clone(), self.path.with_extension("inflight")] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => log::warn!("clear pending key rules: {e}"),
+            }
+        }
     }
 
     /// The settings UI keeps showing its newest edit while an older send completes.
@@ -148,6 +168,42 @@ mod tests {
         assert_eq!(fixture.outbox().pending().unwrap(), Some(keys.clone()));
         fixture.outbox().confirm(&keys).unwrap();
         assert_eq!(fixture.outbox().pending().unwrap(), None);
+    }
+
+    #[test]
+    fn clear_drops_queued_and_in_flight_edits() {
+        let fixture = Fixture::new();
+        let outbox = fixture.outbox();
+        outbox.publish(&rules(flock_net::ModMode::Off)).unwrap();
+        outbox.pending().unwrap();
+        outbox.publish(&rules(flock_net::ModMode::Position)).unwrap();
+        outbox.clear();
+        outbox.clear();
+        assert_eq!(outbox.pending().unwrap(), None);
+        assert_eq!(outbox.latest().unwrap(), None);
+    }
+
+    #[test]
+    fn edits_are_undeliverable_without_a_sub_role_a_master_or_a_keyrules_master() {
+        use flock_net::{MeStatus, NetConfig, PeerConfig, PeerStatus, Role, StateStatus, Status};
+        let mut config = NetConfig::default();
+        config.role = Role::Sub;
+        assert!(undeliverable(&config, None));
+        config.peers.push(PeerConfig { id: "m".into(), role: Role::Master, ..Default::default() });
+        assert!(!undeliverable(&config, None));
+        let status = |connected, keyrules| Status {
+            running: true,
+            me: MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true },
+            discovered: vec![],
+            peers: vec![PeerStatus { id: "m".into(), name: "M".into(), os: None, connected, rtt_ms: None, can_send: true, via_master: false, keyrules }],
+            state: StateStatus { mode: "local".into(), peer: None },
+            pairing: None, transfer: None, following: None, layout: vec![], reconnecting: false, keys: Default::default(),
+        };
+        assert!(!undeliverable(&config, Some(&status(true, true))));
+        assert!(!undeliverable(&config, Some(&status(false, false))));
+        assert!(undeliverable(&config, Some(&status(true, false))));
+        config.role = Role::Master;
+        assert!(undeliverable(&config, None));
     }
 
     #[test]
