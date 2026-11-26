@@ -291,10 +291,8 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                     log::error!("save master settings: {e:#}");
                                 }
                             }),
-                            on_key_rules: Box::new(move |keys| {
-                                if let Err(e) = edited.update_config(|c| c.network.keys = keys) {
-                                    log::error!("save key rules from a sub: {e:#}");
-                                }
+                            persist_key_rules: Box::new(move |keys| {
+                                edited.update_config(|c| c.network.keys = keys.clone())
                             }),
                             ..flock_net::Hooks::default()
                         };
@@ -680,7 +678,8 @@ impl Platform for WindowsPlatform {
         displays()
     }
     fn cursor(&self) -> Option<(f64, f64)> {
-        if !self.edges_allowed.load(Ordering::Acquire) { return None; }
+        // Not gated on `edges_allowed`: a controlled computer needs the cursor to find the
+        // way back. Outgoing edges stay blocked by `app_drives_edges` and `start_capture`.
         crate::edge::platform::cursor()
     }
     fn warp(&self, x: f64, y: f64) {

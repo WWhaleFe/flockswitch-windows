@@ -1,6 +1,18 @@
 //! Window ownership and fallback for an interactive Store update.
 use anyhow::Result;
 
+/// The user closed the Store's update dialog: not a failure, so no Store page is opened.
+#[derive(Debug)]
+pub struct Canceled;
+
+impl std::fmt::Display for Canceled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the Store update was canceled")
+    }
+}
+
+impl std::error::Error for Canceled {}
+
 pub fn run<T>(
     owner: Option<isize>,
     initialize: impl FnOnce(isize) -> Result<T>,
@@ -12,7 +24,11 @@ pub fn run<T>(
         .ok_or_else(|| anyhow::anyhow!("the settings window handle is unavailable"))
         .and_then(initialize)
         .and_then(install);
-    result.inspect_err(|_| fallback())
+    result.inspect_err(|e| {
+        if e.downcast_ref::<Canceled>().is_none() {
+            fallback();
+        }
+    })
 }
 
 #[cfg(test)]
@@ -33,6 +49,12 @@ mod tests {
             assert!(result.is_err());
             assert!(opened.get());
         }
+    }
+
+    #[test]
+    fn canceling_the_dialog_does_not_open_the_store() {
+        let result = run(Some(123), Ok, |_| Err(Canceled.into()), || panic!("canceled"));
+        assert!(result.unwrap_err().downcast_ref::<Canceled>().is_some());
     }
 
     #[test]

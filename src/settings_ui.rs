@@ -695,6 +695,10 @@ impl SettingsApp {
                     log::info!("update {version}: installing; closing the settings window");
                     std::process::exit(0);
                 }
+                Err(e) if e.downcast_ref::<flockswitch::store_dialog::Canceled>().is_some() => {
+                    log::info!("update {version}: canceled in the Store dialog");
+                    *view.lock().unwrap() = UpdateView { state: UpdateState::Available(version), detail: None };
+                }
                 Err(e) => {
                     log::warn!("update {version} not installed: {e:#}");
                     *view.lock().unwrap() = UpdateView { state: UpdateState::InstallFailed(version), detail: Some(short_error(&e)) };
@@ -1804,18 +1808,51 @@ fn color_swatch(ui: &mut Ui, p: Palette, [r, g, b]: [u8; 3], selected: bool) -> 
     resp
 }
 
-/// A titled card: the title sits above a rounded panel, as in the system settings.
-/// This computer's private IPv4 addresses, read from `ifconfig`.
+/// This computer's private IPv4 addresses, from the network adapters.
 fn local_ips() -> Vec<String> {
-    let Ok(out) = std::process::Command::new("/sbin/ifconfig").output() else { return Vec::new() };
-    let mut ips: Vec<String> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix("inet ")?.split_whitespace().next()?.parse::<std::net::Ipv4Addr>().ok())
-        .filter(|ip| ip.is_private())
-        .map(|ip| ip.to_string())
-        .collect();
-    ips.dedup();
-    ips
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR_IN};
+    const IF_OPER_STATUS_UP: i32 = 1;
+    let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    let mut len = 16 * 1024u32;
+    let mut buffer: Vec<u64> = Vec::new();
+    // The size can change between calls, so retry a few times.
+    for _ in 0..4 {
+        buffer.resize((len as usize).div_ceil(8), 0);
+        let result = unsafe { GetAdaptersAddresses(AF_INET as u32, flags, std::ptr::null(), buffer.as_mut_ptr().cast(), &mut len) };
+        if result == 0 {
+            let mut ips = Vec::new();
+            let mut adapter = buffer.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+            // Safety: the list lives in `buffer`, which GetAdaptersAddresses filled and nothing else touches.
+            unsafe {
+                while !adapter.is_null() {
+                    let a = &*adapter;
+                    if a.OperStatus == IF_OPER_STATUS_UP {
+                        let mut unicast = a.FirstUnicastAddress;
+                        while !unicast.is_null() {
+                            let u = &*unicast;
+                            let sockaddr = u.Address.lpSockaddr;
+                            if !sockaddr.is_null() && (*sockaddr).sa_family == AF_INET {
+                                let v4 = &*sockaddr.cast::<SOCKADDR_IN>();
+                                let ip = std::net::Ipv4Addr::from(u32::from_be(v4.sin_addr.S_un.S_addr));
+                                if ip.is_private() {
+                                    ips.push(ip.to_string());
+                                }
+                            }
+                            unicast = u.Next;
+                        }
+                    }
+                    adapter = a.Next;
+                }
+            }
+            ips.dedup();
+            return ips;
+        }
+        if result != 111 { break; } // ERROR_BUFFER_OVERFLOW: len holds the size needed
+    }
+    Vec::new()
 }
 
 /// The picture at the top of the "How does it work?" window: this computer, the

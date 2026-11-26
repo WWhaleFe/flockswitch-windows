@@ -391,6 +391,13 @@ mod store {
         Ok(StoreContext::GetDefault()?)
     }
 
+    /// A single-threaded apartment for the Store's dialog calls. Returns whether this call
+    /// initialized the thread (and so must `RoUninitialize`).
+    fn enter_sta() -> bool {
+        use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_SINGLETHREADED};
+        unsafe { RoInitialize(RO_INIT_SINGLETHREADED) }.is_ok()
+    }
+
     pub fn newer() -> Result<Option<String>> {
         let updates = context()?.GetAppAndOptionalStorePackageUpdatesAsync()?.join()?;
         let mut newest = None;
@@ -404,9 +411,20 @@ mod store {
     /// Download and install with a dialog owned by the settings viewport captured
     /// on the UI thread. Every initialization or request failure opens the Store page.
     pub fn install_now(owner: Option<isize>) -> Result<()> {
+        // The dialog wants a single-threaded (UI-style) apartment, not the MTA of the
+        // other Store calls; this runs on its own thread, so it is left again at the end.
+        let entered = enter_sta();
+        let result = install_dialog(owner);
+        if entered {
+            unsafe { windows::Win32::System::WinRT::RoUninitialize() };
+        }
+        result
+    }
+
+    fn install_dialog(owner: Option<isize>) -> Result<()> {
         use windows::core::Interface;
         flockswitch::store_dialog::run(owner, |hwnd| {
-            let ctx = context()?;
+            let ctx = StoreContext::GetDefault()?;
             let init = ctx.cast::<windows::Win32::UI::Shell::IInitializeWithWindow>()?;
             unsafe { init.Initialize(windows::Win32::Foundation::HWND(hwnd as *mut std::ffi::c_void))?; }
             Ok(ctx)
@@ -419,6 +437,7 @@ mod store {
             let result = ctx.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)?.join()?;
             match result.OverallState()? {
                 StorePackageUpdateState::Completed => Ok(()),
+                StorePackageUpdateState::Canceled => Err(flockswitch::store_dialog::Canceled.into()),
                 state => bail!("the Store update ended as {state:?}"),
             }
         }, || super::open_url(super::STORE_PAGE))

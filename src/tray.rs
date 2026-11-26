@@ -324,6 +324,11 @@ impl Ui {
                 }
             }
             Action::Settings => open_settings_window(),
+            Action::Update if crate::store::packaged() => {
+                // The Store version goes through the settings window, which owns the
+                // Store dialog and falls back to the Store page.
+                open_settings_window_with("update");
+            }
             Action::Update => {
                 if let UpdateState::Available(v) | UpdateState::InstallFailed(v) = self.shared.status().update {
                     let shared = self.shared.clone();
@@ -338,9 +343,19 @@ impl Ui {
 
 /// Starts the settings window as a separate process of this same program.
 pub fn open_settings_window() {
+    open_settings_window_with("");
+}
+
+/// The same, with an extra argument (`update` opens on the page with the new version).
+fn open_settings_window_with(extra: &str) {
     match std::env::current_exe() {
         Ok(exe) => {
-            if let Err(e) = std::process::Command::new(exe).arg("settings").spawn() {
+            let mut command = std::process::Command::new(exe);
+            command.arg("settings");
+            if !extra.is_empty() {
+                command.arg(extra);
+            }
+            if let Err(e) = command.spawn() {
                 log::warn!("cannot open the settings window: {e}");
             }
         }

@@ -2,7 +2,9 @@
 //! computers again at once instead of waiting for its own timers.
 //!
 //! A hidden window on the network input thread receives
-//! WM_POWERBROADCAST (resume) and WM_WTSSESSION_CHANGE (unlock) and sets a flag.
+//! WM_POWERBROADCAST (resume) and WM_WTSSESSION_CHANGE (unlock) and sets a flag. A
+//! Modern Standby PC may wake without a resume broadcast, so the window also asks for
+//! the display-on power setting and for suspend/resume notices.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use windows_sys::Win32::Foundation::{ERROR_CLASS_ALREADY_EXISTS, HWND};
@@ -25,6 +27,15 @@ fn is_resume(event: u32) -> bool {
     event == PBT_APMRESUMEAUTOMATIC || event == PBT_APMRESUMESUSPEND
 }
 
+/// Whether a PBT_POWERSETTINGCHANGE `setting` (the GUID in POWERBROADCAST_SETTING) with
+/// its first data byte `data` is the display turning on (GUID_CONSOLE_DISPLAY_STATE:
+/// 0 off, 1 on, 2 dimmed).
+fn is_display_on(setting: &windows_sys::core::GUID, data: u8) -> bool {
+    use windows_sys::Win32::System::SystemServices::GUID_CONSOLE_DISPLAY_STATE;
+    let g = GUID_CONSOLE_DISPLAY_STATE;
+    setting.data1 == g.data1 && setting.data2 == g.data2 && setting.data3 == g.data3 && setting.data4 == g.data4 && data == 1
+}
+
 /// Whether a WM_WTSSESSION_CHANGE `event` (wParam) is the unlock of the session.
 fn is_unlock(event: u32) -> bool {
     event == windows_sys::Win32::UI::WindowsAndMessaging::WTS_SESSION_UNLOCK
@@ -39,6 +50,13 @@ unsafe extern "system" fn window_proc(
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     match message {
         WM_POWERBROADCAST if is_resume(wparam as u32) => notify(),
+        WM_POWERBROADCAST if wparam as u32 == PBT_POWERSETTINGCHANGE && lparam != 0 => {
+            // Safety: for this event lParam points at a POWERBROADCAST_SETTING.
+            let setting = unsafe { &*(lparam as *const windows_sys::Win32::System::Power::POWERBROADCAST_SETTING) };
+            if setting.DataLength >= 1 && is_display_on(&setting.PowerSetting, setting.Data[0]) {
+                notify();
+            }
+        }
         WM_WTSSESSION_CHANGE if is_unlock(wparam as u32) => notify(),
         _ => {}
     }
@@ -46,13 +64,18 @@ unsafe extern "system" fn window_proc(
 }
 
 /// Owned and dropped by the input thread, whose message loop dispatches the notices.
-pub struct Listener(HWND);
+pub struct Listener(HWND, [isize; 2]);
 
 impl Listener {
     pub fn new() -> Result<Self, String> {
         use std::ptr::{null, null_mut};
         use windows_sys::Win32::{
-            System::{LibraryLoader::GetModuleHandleW, RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION}},
+            System::{
+                Power::{RegisterPowerSettingNotification, RegisterSuspendResumeNotification},
+                LibraryLoader::GetModuleHandleW,
+                RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION},
+                SystemServices::GUID_CONSOLE_DISPLAY_STATE,
+            },
             UI::WindowsAndMessaging::*,
         };
         let class: Vec<u16> = "FlockswitchWake\0".encode_utf16().collect();
@@ -84,7 +107,14 @@ impl Listener {
             if WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) == 0 {
                 log::warn!("unlock notices unavailable (WTSRegisterSessionNotification failed); wake notices still work");
             }
-            Ok(Self(hwnd))
+            // Modern Standby (S0 low power idle): without these a resume may not be broadcast
+            // to a plain window. A failed registration only loses that extra notice.
+            let display = RegisterPowerSettingNotification(hwnd, &GUID_CONSOLE_DISPLAY_STATE, DEVICE_NOTIFY_WINDOW_HANDLE);
+            let resume = RegisterSuspendResumeNotification(hwnd, DEVICE_NOTIFY_WINDOW_HANDLE);
+            if display == 0 || resume == 0 {
+                log::warn!("modern standby wake notices unavailable (display {}, resume {})", display != 0, resume != 0);
+            }
+            Ok(Self(hwnd, [display, resume]))
         }
     }
 }
@@ -93,6 +123,9 @@ impl Drop for Listener {
     fn drop(&mut self) {
         // Safety: the window was created on this thread and no longer receives notices.
         unsafe {
+            use windows_sys::Win32::System::Power::{UnregisterPowerSettingNotification, UnregisterSuspendResumeNotification};
+            if self.1[0] != 0 { UnregisterPowerSettingNotification(self.1[0]); }
+            if self.1[1] != 0 { UnregisterSuspendResumeNotification(self.1[1]); }
             windows_sys::Win32::System::RemoteDesktop::WTSUnRegisterSessionNotification(self.0);
             windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(self.0);
         }
@@ -111,6 +144,15 @@ mod tests {
         super::notify();
         assert!(super::take());
         assert!(!super::take());
+    }
+
+    #[test]
+    fn only_display_on_counts() {
+        use windows_sys::Win32::System::SystemServices::{GUID_CONSOLE_DISPLAY_STATE, GUID_MONITOR_POWER_ON};
+        assert!(super::is_display_on(&GUID_CONSOLE_DISPLAY_STATE, 1));
+        assert!(!super::is_display_on(&GUID_CONSOLE_DISPLAY_STATE, 0));
+        assert!(!super::is_display_on(&GUID_CONSOLE_DISPLAY_STATE, 2));
+        assert!(!super::is_display_on(&GUID_MONITOR_POWER_ON, 1));
     }
 
     #[test]
