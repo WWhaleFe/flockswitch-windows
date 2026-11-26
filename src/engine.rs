@@ -644,7 +644,7 @@ impl Engine {
     }
 
     /// Moves the followers, then the trigger device, to `channel` (1-based).
-    /// Followers go first so the mouse — the thing the user just pressed — leaves last.
+    /// Followers go first so the mouse - the thing the user just pressed - leaves last.
     /// Stale pairing slots answer with an error and are skipped on their own.
     pub fn switch_to(&mut self, channel: u8) -> Result<()> {
         // The wheel mode as it leaves, to put back when it returns.
@@ -727,7 +727,7 @@ impl Engine {
         self.shared.set_status(|s| s.last_switch = Some(format!("→ {channel}")));
     }
 
-    /// Asks the master mouse, if it is here, which channel it is on — this computer's
+    /// Asks the master mouse, if it is here, which channel it is on - this computer's
     /// channel, which the settings window keeps on.
     fn read_channel(&mut self) {
         let Some(d) = self.trigger.clone() else { return };

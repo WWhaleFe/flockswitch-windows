@@ -1,10 +1,11 @@
-//! Notification-area icon with the settings menu.
-//! The engine runs on its own thread; the menu edits the shared config and the
-//! engine picks the change up on its next loop.
+//! Notification-area icon with a small menu. The edge watcher and the network service
+//! run on their own threads; the settings window changes the shared config and they pick
+//! the change up on their next loop.
 
 use crate::engine::Engine;
 use crate::i18n::{texts, Texts};
 use crate::icon;
+use crate::net::NetState;
 use crate::shared::{Shared, Status};
 use crate::update::UpdateState;
 use anyhow::Result;
@@ -21,6 +22,7 @@ use tray_icon::{Icon, TrayIcon, TrayIconBuilder, TrayIconEvent};
 #[derive(Clone)]
 enum Action {
     Enabled,
+    Channel(u8),
     Settings,
     Update,
     Quit,
@@ -30,17 +32,20 @@ struct Ui {
     shared: Arc<Shared>,
     tray: Option<TrayIcon>,
     actions: HashMap<MenuId, Action>,
-    shown: (Status, u64),
+    shown: (Status, u64, NetState),
     uninstall_requested: bool,
     shortcuts: Option<crate::hotkey::Shortcuts>,
 }
 
 pub fn run(shared: Arc<Shared>) -> Result<()> {
-    // Ctrl+C, logout or shutdown: let the loop below hand the button back and exit.
+    // Ctrl+C, logout or shutdown: let the loop below stop the threads and exit.
     let s = shared.clone();
     ctrlc::set_handler(move || s.stop.store(true, std::sync::atomic::Ordering::SeqCst))?;
+    // The settings window and a newer copy read the running version from here.
+    shared.set_status(|_| {});
     let engine = spawn_engine(shared.clone());
     crate::edge::spawn(shared.clone());
+    let mut network = Some(crate::net::spawn(shared.clone()));
     crate::update::spawn_periodic(shared.clone());
 
     let event_loop = EventLoopBuilder::new().build();
@@ -49,7 +54,7 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
         shared: shared.clone(),
         tray: None,
         actions: HashMap::new(),
-        shown: (Status::default(), u64::MAX),
+        shown: (Status::default(), u64::MAX, NetState::Off),
         uninstall_requested: false,
         shortcuts: None,
     };
@@ -103,6 +108,9 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
         let destroyed = matches!(event, Event::LoopDestroyed);
         if shared.stopped() || destroyed {
             shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            if let Some(h) = network.take() {
+                let _ = h.join();
+            }
             if let Some(h) = engine.take() {
                 join_briefly(h); // lets the engine hand the button back first
             }
@@ -114,14 +122,20 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
             return;
         }
 
-        // Redraw when the engine found/lost devices or switched.
-        let now = (shared.status(), shared.version());
+        // Redraw when the update state or the settings changed, or the network state did.
+        let now = (shared.status(), shared.version(), NetState::of(&shared.config(), crate::net::live_status().as_ref()));
         if ui.tray.is_some() && now != ui.shown {
             ui.refresh();
         }
     });
 }
 
+/// Passed by the start at login (`flockswitch tray --login`, here and in the Store
+/// package's startup task), so that start never opens the settings window.
+pub const LOGIN_ARG: &str = "--login";
+
+/// Start at login through the Run registry key. Not for the Store version: its package
+/// declares a startup task instead (a Run entry written from a package is not used).
 /// Waits for the engine to finish, but not forever: it may be in the middle of a slow
 /// device request, and the UI must not hang at quit or logout.
 fn join_briefly(h: JoinHandle<()>) {
@@ -159,19 +173,13 @@ fn spawn_engine(shared: Arc<Shared>) -> JoinHandle<()> {
     })
 }
 
-/// Passed by the start at login (`flockswitch tray --login`, here and in the Store
-/// package's startup task), so that start never opens the settings window.
-pub const LOGIN_ARG: &str = "--login";
-
-/// Start at login through the Run registry key. Not for the Store version: its package
-/// declares a startup task instead (a Run entry written from a package is not used).
 pub fn autostart() -> Option<AutoLaunch> {
     if crate::store::packaged() {
         return None;
     }
     let exe = std::env::current_exe().ok()?;
     AutoLaunchBuilder::new()
-        .set_app_name("flockswitch")
+        .set_app_name(crate::APP_NAME)
         // Quoted: the arguments follow the path, which may contain spaces.
         .set_app_path(&format!("\"{}\"", exe.to_string_lossy()))
         .set_args(&["tray", LOGIN_ARG])
@@ -193,10 +201,9 @@ pub fn refresh_autostart() {
     }
 }
 
-/// White arrows on a blue tile (grey when paused), visible on light and dark taskbars.
-fn tray_icon(enabled: bool) -> Result<Icon> {
-    let tile = if enabled { [0x25, 0x63, 0xEB, 255] } else { [0x6B, 0x72, 0x80, 255] };
-    Ok(Icon::from_rgba(icon::arrows(32, [255, 255, 255, 255], Some(tile)), 32, 32)?)
+/// White arrows on a blue tile, visible on light and dark taskbars.
+fn tray_icon() -> Result<Icon> {
+    Ok(Icon::from_rgba(icon::arrows(32, [255, 255, 255, 255], Some([0x25, 0x63, 0xEB, 255])), 32, 32)?)
 }
 
 impl Ui {
@@ -206,27 +213,27 @@ impl Ui {
         // grows for as long as the app runs.
         TrayIconEvent::set_event_handler(Some(|_: TrayIconEvent| {}));
         let menu = self.build_menu();
-        let cfg = self.shared.config();
         let builder = TrayIconBuilder::new().with_menu(Box::new(menu)).with_tooltip(self.tooltip());
-        let builder = builder.with_icon(tray_icon(cfg.enabled)?);
+        let builder = builder.with_icon(tray_icon()?);
         let tray = builder.build()?;
         self.tray = Some(tray);
-        self.shown = (self.shared.status(), self.shared.version());
+        self.shown = self.snapshot();
         Ok(())
     }
 
     fn refresh(&mut self) {
         let menu = self.build_menu();
-        let enabled = self.shared.config().enabled;
         let tooltip = self.tooltip();
         if let Some(tray) = &self.tray {
             tray.set_menu(Some(Box::new(menu)));
             let _ = tray.set_tooltip(Some(tooltip));
-            if let Ok(icon) = tray_icon(enabled) {
-                let _ = tray.set_icon(Some(icon));
-            }
         }
-        self.shown = (self.shared.status(), self.shared.version());
+        self.shown = self.snapshot();
+    }
+
+    /// What the menu shows, to tell when it needs rebuilding.
+    fn snapshot(&self) -> (Status, u64, NetState) {
+        (self.shared.status(), self.shared.version(), NetState::of(&self.shared.config(), crate::net::live_status().as_ref()))
     }
 
     fn check(&mut self, text: impl AsRef<str>, checked: bool, enabled: bool, action: Action) -> CheckMenuItem {
@@ -241,22 +248,16 @@ impl Ui {
         item
     }
 
-    /// The first menu line: paused, running with which mouse, or what it looks for.
+    /// The first menu line: what this computer is doing on the network.
     fn status_line(&self) -> String {
-        let t: &Texts = texts();
-        let st = self.shared.status();
-        if !self.shared.config().enabled {
-            format!("○ {}", t.paused)
-        } else if let Some(trigger) = &st.trigger {
-            format!("● {} — {trigger}", t.running)
-        } else {
-            format!("◌ {}", t.searching)
-        }
+        let state = NetState::of(&self.shared.config(), crate::net::live_status().as_ref());
+        let mark = if state == NetState::Off { "○" } else { "●" };
+        format!("{mark} {}", state.text(texts()))
     }
 
     /// Hovering the icon tells the same, since the app starts without a window.
     fn tooltip(&self) -> String {
-        format!("flockswitch\n{}", self.status_line())
+        format!("{}\n{}", crate::APP_NAME, self.status_line())
     }
 
     fn build_menu(&mut self) -> Menu {
@@ -265,8 +266,16 @@ impl Ui {
         let cfg = self.shared.config();
         let st = self.shared.status();
         let menu = Menu::new();
-
         let _ = menu.append(&MenuItem::new(self.status_line(), false, None));
+
+        let status = if !cfg.enabled {
+            format!("○ {}", t.paused)
+        } else if let Some(trigger) = &st.trigger {
+            format!("● {} - {trigger}", t.running)
+        } else {
+            format!("◌ {}", t.searching)
+        };
+        let _ = menu.append(&MenuItem::new(status, false, None));
         if let Some(last) = &st.last_switch {
             let _ = menu.append(&MenuItem::new(format!("{}: {} {last}", t.last_switch, t.channel), false, None));
         }
@@ -276,11 +285,18 @@ impl Ui {
         let _ = menu.append(&enabled);
         // Everything else lives in the settings window, which stays open while you
         // change things (a native menu closes after every click).
+        for channel in 1..=3 {
+            let item = self.item(format!("{} {channel}", t.channel), Action::Channel(channel));
+            let _ = menu.append(&item);
+        }
+        for device in &st.devices {
+            let _ = menu.append(&MenuItem::new(format!("{}: {}", t.section_devices, device.name), false, None));
+        }
         let settings = self.item(t.settings, Action::Settings);
         let _ = menu.append(&settings);
         let _ = menu.append(&PredefinedMenuItem::separator());
 
-        let _ = menu.append(&MenuItem::new(format!("flockswitch {}", env!("CARGO_PKG_VERSION")), false, None));
+        let _ = menu.append(&MenuItem::new(format!("{} {}", crate::APP_NAME, env!("CARGO_PKG_VERSION")), false, None));
         match &st.update {
             UpdateState::Available(v) | UpdateState::InstallFailed(v) => {
                 let item = self.item(format!("{} ({v})", t.update_install), Action::Update);
@@ -301,6 +317,7 @@ impl Ui {
     fn handle(&mut self, action: Action) -> bool {
         match action {
             Action::Quit => return true,
+            Action::Channel(channel) => self.shared.request_switch(channel),
             Action::Enabled => {
                 if let Err(e) = self.shared.update_config(|c| c.enabled = !c.enabled) {
                     log::info!("setting not changed: {e:#}");

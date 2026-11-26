@@ -1,6 +1,6 @@
-//! The settings window. It runs as its own process (`flockswitch settings`) so the tray
+//! The settings window. It runs as its own process (`flockswitch2 settings`) so the tray
 //! app keeps its own event loop; changes are written to config.toml, which the running
-//! engine reloads within a second. Every change applies immediately and the window
+//! app reloads within a second. Every change applies immediately and the window
 //! stays open, unlike a native menu that closes after each click.
 
 use crate::backup::{self, Backup, NameError, RenameError, Saved, Stamp, MAX_BACKUPS};
@@ -12,22 +12,20 @@ use crate::device::waveform;
 use crate::hotkey::LOCATE;
 use crate::i18n::{texts, Texts};
 use crate::shared::{self, DeviceInfo, HapticPreview, StatusFile};
+use crate::net::NetState;
 use crate::update::{self, UpdateState};
 use crate::window_size::SizeKeeper;
 use anyhow::{anyhow, Result};
 use auto_launch::AutoLaunch;
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontFamily, FontId, Margin, Pos2, Rect, Response, RichText, Role,
-    Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo,
+    Sense, Shadow, Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const REFRESH: Duration = Duration::from_secs(1);
-/// The "Shortcuts" and "Edges" entries next to the buttons on the switching tab.
-const SHORTCUTS_TAB: u16 = 0xFFFF;
-const EDGES_TAB: u16 = 0xFFFE;
 
 /// The app icon, scaled by build.rs (WINDOW_ICON there).
 const ICON_SIDE: u32 = 96;
@@ -72,7 +70,7 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
     let shown = Arc::new(AtomicBool::new(false));
     watch_first_frame(shown.clone());
     eframe::run_native(
-        "flockswitch-settings",
+        "flockswitch2-settings",
         options,
         Box::new(|cc| {
             crate::overlay::set_ready();
@@ -225,7 +223,8 @@ fn install_style(ctx: &egui::Context) {
         visuals.panel_fill = p.bg;
         visuals.window_fill = p.bg;
         visuals.override_text_color = Some(p.text);
-        visuals.selection.bg_fill = p.accent.gamma_multiply(0.35);
+        visuals.selection.bg_fill = p.accent.gamma_multiply(0.45);
+        visuals.selection.stroke = Stroke::new(1.0, p.ink);
         // Drop-downs and the colour picker: framed like the buttons.
         for (w, fill) in [
             (&mut visuals.widgets.inactive, p.card),
@@ -243,59 +242,117 @@ fn install_style(ctx: &egui::Context) {
     }
 }
 
-/// Colours for the current light/dark appearance. The accent matches the app icon.
+/// Colours for the current light/dark appearance. They follow the app icon: a gray
+/// ground, white cards, ink-black marks and one fluorescent lime accent.
 #[derive(Clone, Copy)]
 struct Palette {
     bg: Color32,
+    /// The ground's gradient, top and bottom (the same as `bg` where it is flat).
+    bg_top: Color32,
+    bg_bottom: Color32,
     card: Color32,
     border: Color32,
     track: Color32,
     hover: Color32,
     text: Color32,
     muted: Color32,
+    /// Lime. Never used for text on the ground: see `accent_text`.
     accent: Color32,
-    /// A chosen "Off" segment: neutral gray (Apple's systemGray), so it reads as
-    /// switched off rather than as a choice made.
+    /// Text and marks on the lime (ink, never white).
+    ink: Color32,
+    /// Accent-coloured text on the ground: lime itself is too pale on the light ground.
+    accent_text: Color32,
+    /// A chosen "Off" segment and a switch that is off: neutral gray.
     off: Color32,
+    /// The dashed outline and the hatching of the "other computer" cards.
+    dash: Color32,
+    hatch: Color32,
+    /// The soft shadow under cards.
+    shadow: Color32,
     green: Color32,
     amber: Color32,
     red: Color32,
 }
 
+const INK: Color32 = Color32::from_rgb(0x1B, 0x1C, 0x1F);
+const LIME: Color32 = Color32::from_rgb(0xD4, 0xF5, 0x3C);
+
 impl Palette {
     fn new(dark: bool) -> Palette {
         if dark {
+            let bg = INK;
             Palette {
-                bg: Color32::from_rgb(0x1C, 0x1C, 0x1F),
-                card: Color32::from_rgb(0x2A, 0x2A, 0x2E),
-                border: Color32::from_rgb(0x3A, 0x3A, 0x40),
-                track: Color32::from_rgb(0x48, 0x48, 0x50),
-                hover: Color32::from_rgb(0x33, 0x33, 0x39),
-                text: Color32::from_rgb(0xF2, 0xF2, 0xF5),
-                muted: Color32::from_rgb(0xA8, 0xA8, 0xB0),
-                accent: Color32::from_rgb(0x6E, 0x7B, 0xFF),
-                off: Color32::from_rgb(0x8E, 0x8E, 0x93),
+                bg,
+                bg_top: bg,
+                bg_bottom: bg,
+                card: Color32::from_rgb(0x25, 0x26, 0x2A),
+                border: Color32::from_rgb(0x34, 0x36, 0x3C),
+                track: Color32::from_rgb(0x3A, 0x3C, 0x42),
+                hover: Color32::from_rgb(0x2E, 0x30, 0x35),
+                text: Color32::from_rgb(0xF2, 0xF3, 0xF5),
+                muted: Color32::from_rgb(0xA3, 0xA7, 0xB0),
+                accent: LIME,
+                ink: INK,
+                accent_text: LIME,
+                off: Color32::from_rgb(0x5A, 0x5D, 0x64),
+                dash: Color32::from_rgb(0x5A, 0x5D, 0x64),
+                hatch: Color32::from_rgba_unmultiplied(0x6B, 0x6F, 0x78, 60),
+                shadow: Color32::from_black_alpha(90),
                 green: Color32::from_rgb(0x30, 0xD1, 0x58),
                 amber: Color32::from_rgb(0xFF, 0xB3, 0x40),
                 red: Color32::from_rgb(0xFF, 0x5A, 0x50),
             }
         } else {
             Palette {
-                bg: Color32::from_rgb(0xF2, 0xF2, 0xF6),
-                card: Color32::WHITE,
-                border: Color32::from_rgb(0xE2, 0xE2, 0xE8),
-                track: Color32::from_rgb(0xD5, 0xD5, 0xDC),
-                hover: Color32::from_rgb(0xF4, 0xF4, 0xF8),
-                text: Color32::from_rgb(0x1C, 0x1C, 0x1E),
-                muted: Color32::from_rgb(0x60, 0x60, 0x68),
-                accent: Color32::from_rgb(0x46, 0x55, 0xE8),
-                off: Color32::from_rgb(0x8E, 0x8E, 0x93),
-                green: Color32::from_rgb(0x1F, 0xA8, 0x45),
-                amber: Color32::from_rgb(0xC2, 0x6A, 0x00),
-                red: Color32::from_rgb(0xD7, 0x2C, 0x24),
+                bg: Color32::from_rgb(0xEC, 0xEE, 0xF1),
+                bg_top: Color32::from_rgb(0xF0, 0xF1, 0xF3),
+                bg_bottom: Color32::from_rgb(0xE4, 0xE6, 0xEA),
+                card: Color32::from_rgb(0xFB, 0xFB, 0xFC),
+                border: Color32::from_rgb(0xE1, 0xE3, 0xE8),
+                track: Color32::from_rgb(0xE4, 0xE6, 0xEA),
+                hover: Color32::from_rgb(0xF3, 0xF4, 0xF6),
+                text: INK,
+                muted: Color32::from_rgb(0x6B, 0x6F, 0x78),
+                accent: LIME,
+                ink: INK,
+                accent_text: INK,
+                off: Color32::from_rgb(0xC9, 0xCC, 0xD2),
+                dash: Color32::from_rgb(0xA4, 0xA9, 0xB1),
+                hatch: Color32::from_rgba_unmultiplied(0xCD, 0xD0, 0xD6, 110),
+                // Ink at about 8%.
+                shadow: Color32::from_rgba_unmultiplied(0x1B, 0x1C, 0x1F, 20),
+                green: Color32::from_rgb(0x2D, 0xA4, 0x4E),
+                amber: Color32::from_rgb(0xC9, 0x8A, 0x00),
+                red: Color32::from_rgb(0xD9, 0x3B, 0x3B),
             }
         }
     }
+
+    /// The soft wide shadow of cards: offset (0, 6), blur 24.
+    fn card_shadow(&self) -> Shadow {
+        Shadow { offset: [0, 6], blur: 24, spread: 0, color: self.shadow }
+    }
+}
+
+/// Paints the ground: a very subtle vertical gradient where the palette has one.
+fn paint_ground(ui: &Ui, p: Palette) {
+    let rect = ui.max_rect();
+    if p.bg_top == p.bg_bottom {
+        ui.painter().rect_filled(rect, 0, p.bg);
+        return;
+    }
+    let mut mesh = egui::Mesh::default();
+    let uv = Pos2::ZERO;
+    for (pos, color) in [
+        (rect.left_top(), p.bg_top),
+        (rect.right_top(), p.bg_top),
+        (rect.right_bottom(), p.bg_bottom),
+        (rect.left_bottom(), p.bg_bottom),
+    ] {
+        mesh.vertices.push(egui::epaint::Vertex { pos, uv, color });
+    }
+    mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+    ui.painter().add(Shape::mesh(mesh));
 }
 
 fn bold(size: f32) -> FontId {
@@ -307,10 +364,11 @@ fn bold(size: f32) -> FontId {
 enum Tab {
     Switching,
     Devices,
+    Network,
+    Effects,
     General,
 }
 
-/// One channel list: a button's press, or one gesture direction.
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Slot {
     Press(u16),
@@ -335,21 +393,38 @@ fn slot_channels_mut(c: &mut Config, slot: Slot) -> Option<&mut Vec<u8>> {
 enum Uninstall {
     Idle,
     Confirming,
-    /// Waiting for the tray app to hand the button back and quit.
+    /// Waiting for the tray app to quit.
     Waiting(Instant),
     Done,
 }
 
 struct SettingsApp {
+    net_status: Option<flock_net::Status>,
+    net_read: Instant,
+    /// The service's status as last read for the header (see `refresh`).
+    header_status: Option<flock_net::Status>,
+    net_address: String,
+    /// The port as typed (Apply checks it), what is wrong with it, and one waiting for confirmation.
+    net_port_edit: Option<String>,
+    net_port_error: Option<&'static str>,
+    net_port_confirm: Option<u16>,
+    /// The cautions are open after consent.
+    net_notice_open: bool,
+    /// This computer's private IP addresses, and when they were read.
+    net_ips: (Instant, Vec<String>),
+    /// The "How does it work?" window is open.
+    net_how: bool,
     tab: Tab,
-    /// The button whose settings are shown, and for the gesture button which gesture.
-    button_tab: u16,
-    /// Channel whose keyboard shortcut is being recorded.
+    /// The cursor-highlight shortcut is being recorded.
     recording: Option<u8>,
+    button_tab: u16,
     gesture_tab: Gesture,
+    devices: Vec<DeviceInfo>,
+    haptics_dialog: Option<HapticsDialog>,
+    net_tab: usize,
+    edge_confirm: bool,
     uninstall: Uninstall,
     cfg: Config,
-    devices: Vec<DeviceInfo>,
     status: StatusFile,
     autostart: Option<AutoLaunch>,
     autostart_on: bool,
@@ -364,8 +439,6 @@ struct SettingsApp {
     /// Set once a frame has reached the screen (see `watch_first_frame`).
     shown: Arc<AtomicBool>,
     frames: u8,
-    /// The haptics window, while it is open; the main window waits for it.
-    haptics_dialog: Option<HapticsDialog>,
     /// "Reset settings…" was pressed and waits for its confirmation.
     confirm_reset: bool,
     /// A colour being dragged in the picker; saved when the mouse button comes up.
@@ -452,22 +525,8 @@ const COLOR_PRESETS: [[u8; 3]; 7] = [
     [0xFF, 0xFF, 0xFF],
 ];
 
-/// The modal haptics window. Its controls change `draft`; nothing reaches the settings
-/// file or the mouse until Apply or OK.
-struct HapticsDialog {
-    draft: Haptics,
-    /// What Close goes back to, even after an Apply.
-    opened_with: Haptics,
-    /// Top left of the window, centred on the main window when opened.
-    position: Option<Pos2>,
-    /// Keeps it at its one size across monitors with other scaling.
-    size: SizeKeeper,
-}
-
-const HAPTICS_DIALOG_SIZE: [f32; 2] = [620.0, 440.0];
-
-fn haptics_viewport() -> egui::ViewportId {
-    egui::ViewportId::from_hash_of("haptics-settings")
+fn how_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("network-how")
 }
 
 impl SettingsApp {
@@ -476,13 +535,26 @@ impl SettingsApp {
         let autostart_on = autostart.as_ref().is_some_and(|a| a.is_enabled().unwrap_or(false));
         let image = egui::ColorImage::from_rgba_unmultiplied([ICON_SIDE as usize; 2], ICON_RGBA);
         let mut app = SettingsApp {
-            tab: Tab::Switching,
-            button_tab: BUTTON_WHEEL_MODE,
+            net_status: None,
+            net_read: Instant::now() - Duration::from_secs(1),
+            header_status: None,
+            net_address: String::new(),
+            net_port_edit: None,
+            net_port_error: None,
+            net_port_confirm: None,
+            net_notice_open: false,
+            net_ips: (Instant::now() - Duration::from_secs(60), Vec::new()),
+            net_how: false,
+            tab: Tab::Network,
             recording: None,
+            button_tab: BUTTON_WHEEL_MODE,
             gesture_tab: Gesture::Press,
+            devices: Vec::new(),
+            haptics_dialog: None,
+            net_tab: 0,
+            edge_confirm: false,
             uninstall: Uninstall::Idle,
             cfg: Config::load_or_create().unwrap_or_default(),
-            devices: Vec::new(),
             status: StatusFile::default(),
             autostart,
             autostart_on,
@@ -495,7 +567,6 @@ impl SettingsApp {
             icon: ctx.load_texture("app-icon", image, egui::TextureOptions::LINEAR),
             shown,
             frames: 0,
-            haptics_dialog: None,
             confirm_reset: false,
             color_draft: None,
             update: Arc::default(),
@@ -512,8 +583,8 @@ impl SettingsApp {
         app
     }
 
-    /// Re-reads settings, the remembered devices and what the engine sees, so the window
-    /// also reflects changes made from the tray menu or by switching computers.
+    /// Re-reads settings and what the running app reports, so the window also reflects
+    /// changes made by hand or by a master.
     fn refresh(&mut self) {
         self.last_refresh = Instant::now();
         if let Ok(cfg) = Config::load_or_create() {
@@ -522,16 +593,17 @@ impl SettingsApp {
         }
         self.status = shared::load_status_file();
         self.devices = shared::load_catalog();
+        for d in &mut self.devices { d.online = self.status.online.iter().any(|key| key.eq_ignore_ascii_case(&d.key)); }
+        self.header_status = flock_net::read_status(crate::net::config_dir()).ok();
         self.backup_count = backup::list().len();
-        for d in &mut self.devices {
-            d.online = self.status.online.iter().any(|k| k == &d.key);
-        }
     }
 
     /// Applies one change on top of the file's current content, validates, saves.
     fn apply(&mut self, change: impl FnOnce(&mut Config)) {
         let mut next = Config::load_or_create().unwrap_or_else(|_| self.cfg.clone());
+        let previous = next.clone();
         change(&mut next);
+        next.resolve_edge_owner(&previous);
         match next.validate().and_then(|_| next.save()) {
             Ok(()) => {
                 crate::i18n::set_language(&next.language);
@@ -539,19 +611,6 @@ impl SettingsApp {
                 self.error = None;
             }
             Err(e) => self.error = Some(format!("{e:#}")),
-        }
-    }
-
-    /// The master mouse's key. With "auto" and the mouse away (so the engine has not
-    /// picked it yet), assume the first known mouse with the button, as auto would.
-    fn master_key(&self) -> Option<String> {
-        if self.cfg.trigger_device.eq_ignore_ascii_case("auto") {
-            self.status
-                .trigger_key
-                .clone()
-                .or_else(|| self.devices.iter().find(|d| d.master).map(|d| d.key.clone()))
-        } else {
-            Some(self.cfg.trigger_device.clone())
         }
     }
 }
@@ -584,7 +643,8 @@ impl eframe::App for SettingsApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(t.settings_title.into()));
         }
         let p = Palette::new(ui.visuals().dark_mode);
-        let panel = egui::Frame::new().fill(p.bg).inner_margin(Margin::symmetric(18, 12));
+        paint_ground(ui, p);
+        let panel = egui::Frame::new().inner_margin(Margin::symmetric(18, 12));
         // After uninstalling, show only the result: re-reading the settings now would
         // create the deleted settings folder again.
         if self.uninstall_progress() {
@@ -599,34 +659,23 @@ impl eframe::App for SettingsApp {
         if let Some(n) = self.recording {
             self.capture_shortcut(&ctx, t, n);
         }
-
-        // While the haptics window is open this one cannot be closed or used, and
-        // coming back to it hands the focus straight on.
-        let modal = self.haptics_dialog.is_some();
-        if modal {
-            if ctx.input(|i| i.viewport().close_requested()) {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            }
-            if ctx.input(|i| i.focused) {
-                ctx.send_viewport_cmd_to(haptics_viewport(), egui::ViewportCommand::Focus);
-            }
-        }
+        let modal = self.edge_confirm || self.haptics_dialog.is_some() || self.net_port_confirm.is_some();
 
         // The header and the tabs stay in place; only the page below them scrolls.
         let mut overflow = 0.0;
         egui::CentralPanel::default().frame(panel).show(ui, |ui| {
-            if modal {
-                ui.disable();
-            }
+            if modal { ui.disable(); }
             self.header(ui, t, p);
             ui.add_space(12.0);
             let tabs = [
                 (Tab::Switching, t.section_switching),
+                (Tab::Network, t.section_network),
                 (Tab::Devices, t.section_devices),
+                (Tab::Effects, t.section_effects),
                 (Tab::General, t.section_general),
             ];
             let labels: Vec<String> = tabs.iter().map(|(_, l)| l.to_string()).collect();
-            if let Some(i) = segments(ui, p, "tabs", &labels, Role::Tab, SEG_NORMAL, None, None, |i| tabs[i].0 == self.tab) {
+            if let Some(i) = segments(ui, p, "tabs", &labels, Role::Tab, SEG_NORMAL, &[], None, |i| tabs[i].0 == self.tab) {
                 self.tab = tabs[i].0;
                 self.stop_recording();
             }
@@ -648,19 +697,14 @@ impl eframe::App for SettingsApp {
                     }
                     match self.tab {
                         Tab::Switching => self.switching_section(ui, t, p),
-                        Tab::Devices => {
-                            self.master_section(ui, t, p);
-                            self.group_section(ui, t, p);
-                        }
+                        Tab::Devices => { self.master_section(ui, t, p); self.group_section(ui, t, p); },
+                        Tab::Network => self.network_section(ui, t, p),
+                        Tab::Effects => self.effects_section(ui, t, p),
                         Tab::General => {
-                            // As on the Mac: the notice, finding the cursor and haptics on
-                            // the left; language, updates, backups and maintenance on the right.
+                            // Language and updates on the left; backups and maintenance on the right.
                             two_columns(ui, |left, right| {
-                                notice(left, p, t);
-                                self.locate_section(left, t, p);
-                                self.haptics_summary(left, t, p);
-                                self.preferences_card(right, t, p);
-                                self.update_section(right, t, p);
+                                self.preferences_card(left, t, p);
+                                self.update_section(left, t, p);
                                 self.backup_section(right, t, p);
                                 self.maintenance_card(right, t, p);
                             });
@@ -679,10 +723,13 @@ impl eframe::App for SettingsApp {
             });
             overflow = scrolled.content_size.y - scrolled.inner_rect.height();
         });
-        self.grow_to_fit(&ctx, overflow);
+        self.grow_to_fit(&ctx, if self.tab == Tab::Network { 0.0 } else { overflow });
         self.backup_picker(&ctx, t, p);
         self.backup_manager(&ctx, t, p);
+        self.port_confirm_window(&ctx, t, p);
+        self.how_window(&ctx, t);
         self.haptics_window(&ctx, t);
+        self.edge_confirm_window(&ctx, t, p);
     }
 }
 
@@ -761,249 +808,501 @@ impl SettingsApp {
         ctx.request_repaint_after(Duration::from_millis(100));
     }
 
-    /// App icon, name, what the engine is doing and the last switch.
+    /// App icon, name and what the network is doing.
     fn header(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), Sense::hover());
         let painter = ui.painter();
-        let icon = Rect::from_min_size(rect.min + Vec2::new(0.0, 2.0), Vec2::splat(44.0));
-        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        painter.image(self.icon.id(), icon, uv, Color32::WHITE);
-
+        let icon = Rect::from_min_size(rect.min + Vec2::new(0.0, 4.0), Vec2::splat(40.0));
         let x = icon.right() + 12.0;
-        painter.text(Pos2::new(x, rect.top() + 3.0), Align2::LEFT_TOP, "flockswitch", bold(19.0), p.text);
+        painter.text(Pos2::new(x, rect.top() + 3.0), Align2::LEFT_TOP, crate::APP_NAME, bold(19.0), p.text);
 
-        let (color, line) = if !self.cfg.enabled {
-            (p.muted, t.paused.to_string())
-        } else if let Some(trigger) = &self.status.trigger {
-            (p.green, format!("{} · {trigger}", t.running))
-        } else {
-            (p.amber, t.searching.to_string())
-        };
+        let state = NetState::of(&self.cfg, self.header_status.as_ref());
+        let color = if state == NetState::Off { p.muted } else { p.green };
+        let device = if let Some(name) = &self.status.trigger { format!("{} · {}", name, self.status.channel.map(|c| c.to_string()).unwrap_or_default()) } else { t.searching.to_string() };
+        let line = format!("{}  |  {}", state.text(t), device);
         let y = rect.top() + 35.0;
         painter.circle_filled(Pos2::new(x + 5.0, y), 4.5, color);
-        let status = painter.text(Pos2::new(x + 16.0, y), Align2::LEFT_CENTER, line, FontId::proportional(14.0), p.text);
+        painter.text(Pos2::new(x + 16.0, y), Align2::LEFT_CENTER, line, FontId::proportional(14.0), p.text);
+        // The app icon at 40 px with rounded corners.
+        egui::Image::new((self.icon.id(), icon.size())).corner_radius(10).paint_at(ui, icon);
+    }
 
-        if let Some(last) = &self.status.last_switch {
-            let label = format!("{} · {} {last}", t.last_switch, t.channel);
-            let galley = painter.layout_no_wrap(label, FontId::proportional(12.0), p.muted);
-            // On the same line when it fits, otherwise left out (the tray menu shows it too).
-            if status.right() + 16.0 + galley.size().x + 16.0 <= rect.right() {
-                let pill = Rect::from_min_size(
-                    Pos2::new(rect.right() - galley.size().x - 16.0, y - 11.0),
-                    Vec2::new(galley.size().x + 16.0, 22.0),
-                );
-                painter.rect_filled(pill, 11, p.card);
-                painter.rect_stroke(pill, 11, Stroke::new(1.0, p.border), StrokeKind::Inside);
-                painter.galley(pill.center() - galley.size() / 2.0, galley, p.muted);
-            }
+    fn net_request(&mut self, request: flock_net::Request) {
+        if let Err(e) = flock_net::write_request(crate::net::config_dir(), &request) {
+            self.error = Some(format!("{e:#}"));
         }
     }
 
-    /// The master switch, then the settings of one button at a time.
-    fn switching_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        ui.add_space(12.0);
-        info_box(ui, p, t.switching_help);
-        ui.add_space(10.0);
-        card(ui, p, |ui| {
-            let mut enabled = self.cfg.enabled;
-            if switch_row(ui, p, t.enabled, &mut enabled) {
-                self.apply(|c| c.enabled = enabled);
-            }
-        });
-
-        let buttons = [
-            (BUTTON_WHEEL_MODE, t.button_wheel_mode_short, t.button_wheel_mode),
-            (BUTTON_GESTURE, t.button_gesture_short, t.button_gesture),
-            (BUTTON_MIDDLE, t.button_middle_short, t.button_middle),
-        ];
-        ui.add_space(12.0);
-        ui.horizontal(|ui| {
-            ui.add_space(4.0);
-            ui.label(RichText::new(t.section_buttons).font(bold(13.0)).color(p.muted));
-        });
-        ui.add_space(4.0);
-        let tab_ids: Vec<u16> = buttons.iter().map(|b| b.0).chain([SHORTCUTS_TAB, EDGES_TAB]).collect();
-        let labels: Vec<String> = buttons
-            .iter()
-            .map(|(cid, short, _)| (*short, self.cfg.button(*cid).on))
-            .chain([(t.hotkeys_short, self.cfg.hotkeys.on), (t.edges_short, self.cfg.edges.any())])
-            .map(|(short, on)| if on { format!("{short} ✓") } else { short.to_string() })
-            .collect();
-        if let Some(i) = segments(ui, p, "button-tabs", &labels, Role::Tab, SEG_NORMAL, None, None, |i| tab_ids[i] == self.button_tab) {
-            self.button_tab = tab_ids[i];
-            self.stop_recording();
-        }
-        if self.button_tab == SHORTCUTS_TAB {
-            ui.add_space(8.0);
-            card(ui, p, |ui| self.shortcut_rows(ui, t, p));
-            return;
-        }
-        if self.button_tab == EDGES_TAB {
-            ui.add_space(8.0);
-            card(ui, p, |ui| self.edge_rows(ui, t, p));
-            return;
-        }
-        let (cid, _, label) = buttons.into_iter().find(|b| b.0 == self.button_tab).unwrap_or(buttons[0]);
-
-        ui.add_space(8.0);
-        card(ui, p, |ui| {
-            // Only known while the master mouse is on this computer. The button is
-            // turned off with the "Off" segment of its channel row.
-            let missing = self.status.trigger.is_some() && !self.status.buttons.contains(&cid);
-            title_row(ui, p, label, missing.then_some(t.not_on_mouse));
-            divider(ui, p);
-            if cid == BUTTON_GESTURE {
-                self.gesture_rows(ui, t, p, cid);
-            } else {
-                self.action_rows(ui, t, p, Slot::Press(cid));
-            }
-            if cid == BUTTON_MIDDLE {
-                hint(ui, p, t.buttons_hint);
-            }
-            if cid == BUTTON_WHEEL_MODE && self.cfg.button(cid).on {
-                divider(ui, p);
-                let mut keep = self.cfg.keep_wheel_mode;
-                if switch_row_info(ui, p, t.keep_wheel_mode, Some(t.keep_wheel_mode_help), &mut keep) {
-                    self.apply(|c| c.keep_wheel_mode = keep);
-                }
-            }
-            ui.add_space(10.0);
-        });
+    /// A sub with a master follows the master's settings, so they are read-only here.
+    fn follows_master(&self) -> bool {
+        self.cfg.network.role == flock_net::Role::Sub && !self.cfg.network.peers.is_empty()
     }
 
-    /// Keyboard shortcuts on/off and one shortcut per channel.
-    fn shortcut_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        let mut on = self.cfg.hotkeys.on;
-        // The "i" beside the title tells which combinations Windows lets an app use.
-        if switch_row_info(ui, p, t.hotkeys_title, Some(t.hotkey_help), &mut on) {
-            self.apply(|c| c.hotkeys.on = on);
-            self.stop_recording();
-        }
-        hint(ui, p, t.hotkeys_hint);
-        if !self.cfg.hotkeys.on {
-            ui.add_space(10.0);
-            return;
-        }
+    fn master_name(&self) -> String {
+        self.net_status
+            .as_ref()
+            .and_then(|s| s.following.clone())
+            .or_else(|| self.cfg.network.peers.first().map(|p| p.name.clone()))
+            .unwrap_or_default()
+    }
+
+    /// "Following the master's settings", above what a sub cannot change.
+    fn follow_banner(&self, ui: &mut Ui, p: Palette, t: &Texts) {
         ui.add_space(6.0);
-        divider(ui, p);
-        for n in 1..=3u8 {
-            self.shortcut_row(ui, t, p, n, &format!("{} {n}", t.channel), None);
-        }
-        ui.add_space(10.0);
+        info_box(ui, p, &format!("{}{}{}", t.net_follow_pre, self.master_name(), t.net_follow_post));
+        ui.add_space(6.0);
     }
 
-    /// One recordable shortcut: its slot `n` (channel, or LOCATE), the keys and buttons
-    /// to change or clear them, and an "i" with `info` beside the label if given.
-    fn shortcut_row(&mut self, ui: &mut Ui, t: &Texts, p: Palette, n: u8, label: &str, info: Option<&str>) {
-        let width = (ui.available_width() * 0.66).min(300.0);
-        let (mut start, mut clear) = (false, false);
-        let key = self.cfg.shortcut(n).to_string();
-        let recording = self.recording == Some(n);
-        let failed = !recording && !key.is_empty() && self.status.hotkeys_failed.contains(&n);
-        let (shown, color) = if recording {
-            (t.hotkey_press.to_string(), p.accent)
-        } else if key.is_empty() {
-            (t.hotkey_none.to_string(), p.muted)
-        } else {
-            (crate::hotkey::display(&key), if failed { p.amber } else { p.text })
+    fn notice_items(&self, ui: &mut Ui, p: Palette, t: &Texts) {
+        for (i, item) in t.net_notice_items.iter().enumerate() {
+            ui.add_space(6.0);
+            ui.label(RichText::new(format!("{}. {item}", i + 1)).size(13.0).color(p.text));
+        }
+    }
+
+    /// Checks the port typed and, when it is fine, saves it (a port other than the
+    /// default first asks for confirmation).
+    fn try_port(&mut self, t: &Texts, port: Option<u16>, current: u16) {
+        let Some(port) = port else {
+            self.net_port_error = Some(t.net_port_invalid);
+            return;
         };
-        labeled_row_info(ui, p, label, info, width, ROW_SMALL, |ui| {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                if !recording && !key.is_empty() && button(ui, p, t.hotkey_clear, ButtonKind::Plain).clicked() {
-                    clear = true;
+        match flock_net::check_port(port, current) {
+            Err(flock_net::PortProblem::Reserved) => self.net_port_error = Some(t.net_port_reserved),
+            Err(flock_net::PortProblem::Ours) => self.net_port_error = Some(t.net_port_ours),
+            Err(flock_net::PortProblem::InUse) => self.net_port_error = Some(t.net_port_in_use),
+            Ok(()) => {
+                self.net_port_error = None;
+                if port == self.cfg.network.port {
+                    self.net_port_edit = None;
+                } else if port == flock_net::DEFAULT_PORT {
+                    self.apply(|c| c.network.port = port);
+                    self.net_port_edit = None;
+                } else {
+                    self.net_port_confirm = Some(port);
                 }
-                if !recording && button(ui, p, t.hotkey_change, ButtonKind::Plain).clicked() {
-                    start = true;
-                }
-                ui.add_space(4.0);
-                ui.label(RichText::new(shown).font(bold(14.0)).color(color));
-            });
-            false
-        });
-        if failed {
-            hint(ui, p, t.hotkey_taken);
-        }
-        if start {
-            self.recording = Some(n);
-            self.error = None;
-            crate::hotkey::hold_pause();
-        }
-        if clear {
-            self.apply(|c| c.set_shortcut(n, ""));
-        }
-    }
-
-    /// Switching at the screen edge, in two columns so the page fits the window: where
-    /// each side goes on the left, how the wait looks and feels on the right.
-    fn edge_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        // No on/off switch: an edge is on when it has a channel, off on "Off".
-        title_row(ui, p, t.edges_title, None);
-        hint(ui, p, t.edges_hint);
-        ui.add_space(6.0);
-        divider(ui, p);
-        two_columns(ui, |left, right| {
-            self.edge_sides(left, t, p);
-            self.edge_wait(right, t, p);
-        });
-        ui.add_space(8.0);
-    }
-
-    /// The channel of each side, how long the cursor must rest there, and its return.
-    fn edge_sides(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        let here = self.status.channel.filter(|c| (1..=3).contains(c));
-        let labels: Vec<String> = [t.off.to_string()].into_iter().chain((1..=3).map(|n| n.to_string())).collect();
-        let width = (ui.available_width() * 0.66).min(260.0);
-        let sides = [(Edge::Left, t.edge_left), (Edge::Right, t.edge_right), (Edge::Top, t.edge_top), (Edge::Bottom, t.edge_bottom)];
-        for (edge, label) in sides {
-            let current = self.cfg.edges.channel(edge);
-            let mut clicked = None;
-            labeled_row(ui, p, label, width, ROW_SMALL, |ui| {
-                // Segment 0 is "off"; this computer's own channel is shown but locked.
-                clicked = segments(ui, p, &format!("edge-{edge:?}"), &labels, Role::RadioButton, SEG_SMALL, here.map(|c| c as usize), Some(0), |i| {
-                    i as u8 == current
-                });
-                false
-            });
-            if let Some(n) = clicked.map(|i| i as u8).filter(|&n| n != current) {
-                self.apply(|c| {
-                    *c.edges.channel_mut(edge) = n;
-                    c.edges.on = c.edges.any();
-                });
             }
         }
-        if let Some(c) = here {
-            hint(ui, p, &format!("{} {c}: {}", t.channel, t.here_channel));
-        }
-        ui.add_space(4.0);
-        divider(ui, p);
-        let choices: Vec<(u64, String)> = [(300, "0.3"), (500, "0.5"), (1000, "1"), (2000, "2")]
-            .into_iter()
-            .map(|(ms, text)| (ms, format!("{text}{}", t.seconds_short)))
-            .collect();
-        let choices: Vec<(u64, &str)> = choices.iter().map(|(ms, s)| (*ms, s.as_str())).collect();
-        let mut dwell = self.cfg.edges.dwell_ms;
-        if labeled_row(ui, p, t.edge_dwell, width, ROW_SMALL, |ui| segmented(ui, p, "edge-dwell", &mut dwell, &choices, SEG_SMALL)) {
-            self.apply(|c| c.edges.dwell_ms = dwell);
-        }
-        divider(ui, p);
-        let mut place = self.cfg.edges.place_cursor;
-        if switch_row(ui, p, t.edge_place, &mut place) {
-            self.apply(|c| c.edges.place_cursor = place);
-        }
-        hint(ui, p, t.edges_corner_hint);
     }
 
-    /// What it takes to start the wait, and what shows while it runs.
-    fn edge_wait(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        let mut control = self.cfg.edges.require_control;
-        if switch_row(ui, p, t.edge_require_control, &mut control) {
-            self.apply(|c| c.edges.require_control = control);
+    fn port_confirm_window(&mut self, ctx: &egui::Context, t: &Texts, p: Palette) {
+        let Some(port) = self.net_port_confirm else { return };
+        let (mut close, mut change) = (false, false);
+        let frame = egui::Frame::new()
+            .fill(p.bg)
+            .stroke(Stroke::new(1.0, p.border))
+            .corner_radius(16)
+            .inner_margin(Margin::same(18))
+            .shadow(ctx.global_style().visuals.window_shadow);
+        let response = egui::Modal::new(egui::Id::unique("port-confirm")).frame(frame).show(ctx, |ui| {
+            ui.set_width(420.0);
+            ui.label(RichText::new(format!("{}: {port}", t.net_port)).font(bold(16.0)).color(p.text));
+            ui.add_space(8.0);
+            ui.label(RichText::new(t.net_port_confirm).size(13.0).color(p.text));
+            ui.add_space(14.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                change = button(ui, p, t.net_port_change, ButtonKind::Primary).clicked();
+                close = button(ui, p, t.cancel, ButtonKind::Plain).clicked();
+            });
+        });
+        if change {
+            self.apply(|c| c.network.port = port);
+            self.net_port_edit = None;
+            self.net_port_confirm = None;
+        } else if close || response.should_close() {
+            self.net_port_confirm = None;
         }
-        hint(ui, p, t.edge_require_control_hint);
-        ui.add_space(6.0);
-        divider(ui, p);
-        self.edge_anim_rows(ui, t, p);
+    }
+
+    /// "How does it work?": a window of its own with a diagram and the steps.
+    fn how_window(&mut self, ctx: &egui::Context, t: &Texts) {
+        if !self.net_how {
+            return;
+        }
+        let builder = egui::ViewportBuilder::default()
+            .with_title(t.net_how_button)
+            .with_inner_size([560.0, 640.0])
+            .with_min_inner_size([420.0, 360.0]);
+        ctx.show_viewport_immediate(how_viewport(), builder, |ui, _| {
+            if ui.ctx().input(|i| i.viewport().close_requested()) {
+                self.net_how = false;
+                return;
+            }
+            let p = Palette::new(ui.visuals().dark_mode);
+            let panel = egui::Frame::new().fill(p.bg).inner_margin(Margin::symmetric(18, 14));
+            egui::CentralPanel::default().frame(panel).show(ui, |ui| {
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    how_diagram(ui, p, t);
+                    ui.add_space(14.0);
+                    for (i, item) in t.net_how_items.iter().enumerate() {
+                        let (title, body) = item.split_once(" - ").unwrap_or(("", item));
+                        ui.label(RichText::new(format!("{}. {title}", i + 1)).font(bold(14.0)).color(p.text));
+                        ui.add_space(2.0);
+                        ui.label(RichText::new(body).size(13.0).color(p.text));
+                        ui.add_space(12.0);
+                    }
+                });
+            });
+        });
+    }
+
+
+    fn network_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let poll = Duration::from_millis(500);
+        if self.net_read.elapsed() >= poll {
+            self.net_status = flock_net::read_status(crate::net::config_dir()).ok();
+            self.net_read = Instant::now();
+        }
+        if self.net_ips.0.elapsed() >= Duration::from_secs(10) {
+            self.net_ips = (Instant::now(), local_ips());
+        }
+        ui.ctx().request_repaint_after(poll);
+        let status = self.net_status.clone();
+        let net = self.cfg.network.clone();
+        let accepted = net.notice_accepted;
+        let master = net.role == flock_net::Role::Master;
+        let sub = self.follows_master();
+        let live = status.as_ref().filter(|s| s.running && net.on);
+
+        // The explanation window, and what this computer is (master or sub).
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if button(ui, p, t.net_how_button, ButtonKind::Plain).clicked() {
+                self.net_how = true;
+            }
+            let badge = if master {
+                format!("{} {}/{}", t.net_badge_master, net.peers.len(), flock_net::MAX_SUBS)
+            } else {
+                let name = self.master_name();
+                format!("{} {}", t.net_badge_sub, if name.is_empty() { t.net_no_master } else { &name })
+            };
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Clear of the page's scroll bar.
+                ui.add_space(14.0);
+                ui.label(RichText::new(badge).font(bold(13.0)).color(p.accent_text));
+            });
+        });
+
+        if !accepted {
+            section_with(ui, p, t.net_notice_title, None, None, |ui| {
+                self.notice_items(ui, p, t);
+                ui.add_space(10.0);
+                if button(ui, p, t.net_notice_accept, ButtonKind::Primary).clicked() {
+                    self.apply(|c| c.network.notice_accepted = true);
+                }
+                ui.add_space(8.0);
+            });
+        }
+        section_with(ui, p, t.section_network, None, None, |ui| {
+            let mut on = net.on && accepted;
+            ui.add_enabled_ui(accepted, |ui| {
+                if switch_row(ui, p, t.net_share, &mut on) {
+                    self.apply(|c| c.network.on = on);
+                }
+            });
+            hint(ui, p, if accepted { t.net_explain } else { t.net_notice_first });
+            if on { hint(ui, p, t.net_permission); }
+            if on {
+                if let Some(error) = status.as_ref().and_then(|s| s.me.error.as_ref()) { ui.colored_label(p.red, error); }
+            }
+            if accepted {
+                ui.add_space(6.0);
+                let label = if self.net_notice_open { t.net_notice_hide } else { t.net_notice_review };
+                let link = ui
+                    .add(egui::Label::new(RichText::new(label).size(13.0).color(p.accent_text).underline()).sense(Sense::click()))
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if link.clicked() {
+                    self.net_notice_open = !self.net_notice_open;
+                }
+                if self.net_notice_open {
+                    self.notice_items(ui, p, t);
+                }
+                ui.add_space(8.0);
+            }
+        });
+        let background = crate::main_instance_running();
+        if !background || status.as_ref().is_some_and(|s| net.on && !s.running) {
+            card(ui, p, |ui| {
+                ui.label(RichText::new(t.background_stopped).color(p.red));
+                if button(ui, p, t.background_restart, ButtonKind::Primary).clicked() {
+                    if let Err(e) = crate::net::launch_background() { self.error = Some(e.to_string()); }
+                }
+            });
+        }
+        if let Some(pairing) = live.and_then(|s| s.pairing.as_ref()) {
+            section_with(ui, p, t.net_pairing, None, Some((&pairing.peer_name, p.accent_text)), |ui| {
+                let code = &pairing.code;
+                let shown = if code.len() == 6 && code.is_ascii() { format!("{} {}", &code[..3], &code[3..]) } else { code.clone() };
+                ui.label(RichText::new(shown).font(bold(32.0)).color(p.accent_text));
+                let reason = match pairing.reason.as_deref() {
+                    Some("both_master") => Some(t.net_reason_both_master),
+                    Some("both_sub") => Some(t.net_reason_both_sub),
+                    Some("full") => Some(t.net_reason_full),
+                    Some("has_master") => Some(t.net_reason_has_master),
+                    _ => None,
+                };
+                if let Some(reason) = reason { ui.colored_label(p.red, reason); }
+                match pairing.stage.as_str() {
+                    "done" => { ui.colored_label(p.green, t.net_done); }
+                    "failed" => { ui.colored_label(p.red, t.net_failed); }
+                    stage => {
+                        hint(ui, p, t.net_compare);
+                        hint(ui, p, if stage == "peer_accepted" { t.net_peer_accepted } else { t.net_wait });
+                        ui.horizontal(|ui| {
+                            if button(ui, p, t.net_confirm, ButtonKind::Primary).clicked() { self.net_request(flock_net::Request::Accept { accept: true }); }
+                            if button(ui, p, t.cancel, ButtonKind::Plain).clicked() { self.net_request(flock_net::Request::Accept { accept: false }); }
+                        });
+                    }
+                }
+            });
+        }
+        let labels = [t.net_computers, t.net_this_computer, t.net_crossing, t.net_keyboard_clipboard].map(str::to_string);
+        ui.add_space(10.0);
+        if let Some(i) = segments(ui, p, "network-tabs", &labels, Role::Tab, SEG_SMALL, &[], None, |i| i == self.net_tab) { self.net_tab = i; }
+        if self.net_tab == 1 {
+        section_with(ui, p, t.net_me, None, None, |ui| {
+            let width = (ui.available_width() * 0.62).min(300.0);
+            // Master or sub: only while no computer is paired.
+            let locked = !net.peers.is_empty();
+            let labels = [t.net_role_master.to_string(), t.net_role_sub.to_string()];
+            let mut picked = None;
+            ui.add_enabled_ui(!locked, |ui| {
+                labeled_row_info(ui, p, t.net_role, Some(t.net_role_info), width, ROW_SMALL, |ui| {
+                    picked = segments(ui, p, "net-role", &labels, Role::RadioButton, SEG_SMALL, &[], None, |i| (i == 1) == !master);
+                    false
+                });
+            });
+            if locked { hint(ui, p, t.net_role_locked); }
+            if let Some(i) = picked {
+                let role = if i == 1 { flock_net::Role::Sub } else { flock_net::Role::Master };
+                self.apply(|c| c.network.role = role);
+            }
+            divider(ui, p);
+            let mut name = net.name.clone();
+            if labeled_row(ui, p, t.net_name, width, ROW_SMALL, |ui| {
+                ui.add(egui::TextEdit::singleline(&mut name).hint_text(t.net_name_hint).desired_width(width)).changed()
+            }) { self.apply(|c| c.network.name = name); }
+            // The port is typed into a buffer and checked only on Apply.
+            let current = status.as_ref().filter(|s| s.running).map_or(net.port, |s| s.me.port);
+            let mut text = self.net_port_edit.clone().unwrap_or_else(|| net.port.to_string());
+            let (mut apply, mut default) = (false, false);
+            let port_width = (ui.available_width() * 0.8).min(400.0);
+            let typed = labeled_row(ui, p, t.net_port, port_width, ROW_SMALL, |ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    default = button(ui, p, t.net_port_default, ButtonKind::Plain).clicked();
+                    apply = button(ui, p, t.net_port_apply, ButtonKind::Plain).clicked();
+                    ui.add(egui::TextEdit::singleline(&mut text).desired_width(64.0)).changed()
+                }).inner
+            });
+            if typed {
+                text.retain(|c| c.is_ascii_digit());
+                text.truncate(5);
+                self.net_port_edit = Some(text.clone());
+                self.net_port_error = None;
+            }
+            if default {
+                self.net_port_edit = Some(flock_net::DEFAULT_PORT.to_string());
+                self.try_port(t, Some(flock_net::DEFAULT_PORT), current);
+            } else if apply {
+                self.try_port(t, text.parse().ok(), current);
+            }
+            if let Some(error) = self.net_port_error {
+                ui.colored_label(p.red, error);
+            }
+            if !self.net_ips.1.is_empty() {
+                let shown: Vec<String> = self
+                    .net_ips
+                    .1
+                    .iter()
+                    .map(|ip| if net.port == flock_net::DEFAULT_PORT { ip.clone() } else { format!("{ip}:{}", net.port) })
+                    .collect();
+                hint(ui, p, &format!("{}: {}", t.net_local_ips, shown.join(", ")));
+            }
+            if let Some(s) = &status { hint(ui, p, &format!("{}: {}", t.net_id, s.me.id.get(..8).unwrap_or(&s.me.id))); }
+            ui.add_space(6.0);
+        });
+        }
+        if self.net_tab == 0 {
+        // A computer found nearby but not paired yet is "the other computer": a ghost card.
+        heading(ui, p, t.net_nearby);
+        let discovered: Vec<_> = live
+            .map(|s| s.discovered.iter().filter(|d| !d.paired && !net.peers.iter().any(|p| p.id == d.id)).cloned().collect())
+            .unwrap_or_default();
+        if discovered.is_empty() {
+            empty_card(ui, p, if net.on { t.net_empty } else { t.net_disabled });
+            ui.add_space(8.0);
+        }
+        for peer in discovered {
+            ghost_card(ui, p, |ui| {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(&peer.name).strong());
+                        hint(ui, p, &format!("{:?} · {}", peer.os, peer.addr));
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if button(ui, p, t.net_pair, ButtonKind::Primary).clicked() { self.net_request(flock_net::Request::Pair { pair: peer.id }); }
+                    });
+                });
+                ui.add_space(6.0);
+            });
+            ui.add_space(8.0);
+        }
+        card(ui, p, |ui| {
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.add(egui::TextEdit::singleline(&mut self.net_address).hint_text(t.net_address_hint).desired_width((ui.available_width() - 110.0).max(100.0)));
+                ui.add_enabled_ui(net.on && !self.net_address.trim().is_empty(), |ui| {
+                    if button(ui, p, t.net_add_ip, ButtonKind::Plain).clicked() {
+                        let input = self.net_address.trim();
+                        let address = if let Ok(ip) = input.parse::<std::net::IpAddr>() {
+                            std::net::SocketAddr::new(ip, flock_net::NetConfig::default().port).to_string()
+                        } else { input.to_string() };
+                        if address.parse::<std::net::SocketAddr>().is_ok() { self.net_request(flock_net::Request::PairAddr { pair_addr: address }); }
+                        else { self.error = Some(t.net_address_hint.into()); }
+                    }
+                });
+            });
+            ui.add_space(6.0);
+        });
+        // Same heading as `section_with`, but each peer gets its own card below it
+        // (a computer that is not connected is a ghost card).
+        heading(ui, p, t.net_peers);
+        if net.peers.is_empty() { empty_card(ui, p, t.net_no_peers); }
+        for peer in net.peers.clone() {
+            let connected = live.and_then(|s| s.peers.iter().find(|s| s.id == peer.id)).is_some_and(|s| s.connected);
+            let body = |ui: &mut Ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new(&peer.name).font(bold(15.0)));
+                    let online = live.and_then(|s| s.peers.iter().find(|p| p.id == peer.id)).filter(|p| p.connected);
+                    if let Some(online) = online {
+                        let delay = online.rtt_ms.map(|ms| format!(" · {ms:.1} ms")).unwrap_or_default();
+                        ui.colored_label(p.green, format!("● {}{delay}", t.net_connected));
+                    } else { ui.colored_label(p.muted, format!("● {}", t.net_offline)); }
+                    if button(ui, p, t.net_unpair, ButtonKind::Danger).clicked() { self.net_request(flock_net::Request::Unpair { unpair: peer.id.clone() }); }
+                });
+                if !master {
+                    // The master decides where it sits; here it is only shown.
+                    let side = match peer.side {
+                        Some(flock_net::Side::Left) => t.edge_left,
+                        Some(flock_net::Side::Right) => t.edge_right,
+                        Some(flock_net::Side::Top) => t.edge_top,
+                        Some(flock_net::Side::Bottom) => t.edge_bottom,
+                        None => t.net_side_off,
+                    };
+                    hint(ui, p, &format!("{}{}{}", t.net_master_at_pre, side.to_lowercase(), t.net_master_at_post));
+                    ui.add_space(8.0);
+                    return;
+                }
+                let sides = [None, Some(flock_net::Side::Left), Some(flock_net::Side::Right), Some(flock_net::Side::Top), Some(flock_net::Side::Bottom)];
+                let labels: Vec<String> = [t.off, t.edge_left, t.edge_right, t.edge_top, t.edge_bottom].iter().map(|s| s.to_string()).collect();
+                let width = (ui.available_width() * 0.66).min(300.0);
+                // A side another sub already sits on cannot be chosen.
+                let taken: Vec<usize> = (1..sides.len())
+                    .filter(|&i| net.peers.iter().any(|o| o.id != peer.id && o.side == sides[i]))
+                    .collect();
+                let mut selected = None;
+                labeled_row(ui, p, t.net_position, width, ROW_SMALL, |ui| {
+                    selected = segments(ui, p, &format!("net-side-{}", peer.id), &labels, Role::RadioButton, SEG_SMALL, &taken, Some(0), |i| sides[i] == peer.side);
+                    false
+                });
+                if let Some(i) = selected { self.apply(|c| { if let Some(p) = c.network.peers.iter_mut().find(|p| p.id == peer.id) { p.side = sides[i]; } }); }
+            };
+            ui.push_id(&peer.id, |ui| if connected { card(ui, p, body) } else { ghost_card(ui, p, body) });
+            ui.add_space(8.0);
+        }
+        }
+        if self.net_tab >= 2 {
+        section_with(ui, p, t.net_options, None, None, |ui| {
+            if sub { self.follow_banner(ui, p, t); }
+            ui.add_enabled_ui(!sub, |ui| {
+                let width = (ui.available_width() * 0.7).min(380.0);
+                if self.net_tab == 2 {
+                if net.on && self.cfg.enabled { self.easy_switch_hint(ui, t, p); }
+                let choices: Vec<(u64, String)> = [(0, ""), (300, "0.3"), (500, "0.5"), (1000, "1"), (2000, "2")]
+                    .into_iter()
+                    .map(|(ms, text)| (ms, if ms == 0 { t.net_delay_none.to_string() } else { format!("{text}{}", t.seconds_short) }))
+                    .collect();
+                let choices: Vec<(u64, &str)> = choices.iter().map(|(ms, s)| (*ms, s.as_str())).collect();
+                let mut delay = net.cross_delay_ms;
+                if labeled_row(ui, p, t.net_delay, width, ROW_SMALL, |ui| segmented(ui, p, "net-delay", &mut delay, &choices, SEG_SMALL)) {
+                    self.apply(|c| c.network.cross_delay_ms = delay);
+                }
+                hint(ui, p, t.net_delay_hint);
+                divider(ui, p);
+                let mut control = net.require_control;
+                if switch_row(ui, p, t.net_require_control, &mut control) { self.apply(|c| c.network.require_control = control); }
+                hint(ui, p, t.net_require_control_note);
+                let mut arrival = self.cfg.locate.on && self.cfg.locate.on_arrival;
+                if switch_row(ui, p, t.net_arrival, &mut arrival) {
+                    self.apply(|c| {
+                        c.locate.on_arrival = arrival;
+                        if arrival { c.locate.on = true; }
+                    });
+                }
+                hint(ui, p, t.net_arrival_hint);
+                divider(ui, p);
+                }
+                if self.net_tab == 3 {
+                let mut swap = net.swap_cmd_ctrl;
+                if switch_row(ui, p, t.net_swap, &mut swap) { self.apply(|c| c.network.swap_cmd_ctrl = swap); }
+                let mut lang1 = net.lang1_on_mac != "off";
+                if switch_row(ui, p, t.net_lang1, &mut lang1) { self.apply(|c| c.network.lang1_on_mac = if lang1 { "capslock" } else { "off" }.into()); }
+                divider(ui, p);
+                let mut clipboard = net.share_clipboard;
+                if switch_row(ui, p, t.net_clipboard, &mut clipboard) { self.apply(|c| c.network.share_clipboard = clipboard); }
+                hint(ui, p, t.net_clip_hint);
+                }
+            });
+            if let Some(tr) = live.and_then(|s| s.transfer.as_ref()) {
+                let mb = |bytes: u64| bytes as f64 / 1_048_576.0;
+                let line = match tr.stage.as_str() {
+                    "running" => Some((
+                        format!("{} {:.1} / {:.1} MB", if tr.direction == "send" { t.net_sending } else { t.net_receiving }, mb(tr.done_bytes), mb(tr.total_bytes)),
+                        p.muted,
+                    )),
+                    "done" if tr.direction == "receive" && tr.kind == "files" => {
+                        Some((format!("{} {}", t.net_received, tr.saved_in.clone().unwrap_or_default()), p.green))
+                    }
+                    "too_large" => Some((t.net_too_large.to_string(), p.amber)),
+                    "failed" => Some((t.net_transfer_failed.to_string(), p.red)),
+                    _ => None,
+                };
+                if let Some((text, color)) = line {
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(text).size(12.5).color(color));
+                }
+            }
+            divider(ui, p);
+            hint(ui, p, t.net_return);
+            ui.add_space(6.0);
+        });
+        }
+    }
+
+    /// The countdown effect rows and the cursor highlight, side by side.
+    fn effects_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        ui.add_space(12.0);
+        info_box(ui, p, t.effects_help);
+        two_columns(ui, |left, right| {
+            self.edge_effects_card(left, t, p);
+            self.locate_section(right, t, p);
+            self.haptics_summary(right, t, p);
+        });
+    }
+
+    /// The countdown effect: which one, and its look. A sub shows the master's settings.
+    fn edge_effects_card(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let sub = self.follows_master();
+        section(ui, p, t.section_edge_effects, |ui| {
+            if sub {
+                self.follow_banner(ui, p, t);
+            }
+            ui.add_enabled_ui(!sub, |ui| self.edge_anim_rows(ui, t, p));
+            ui.add_space(8.0);
+        });
     }
 
     /// Which countdown is drawn at the edge, and how it drains where that can be chosen.
@@ -1024,7 +1323,7 @@ impl SettingsApp {
             self.apply(|c| c.edges.anim_style = style);
         }
         if preview {
-            crate::edge::preview(&self.cfg.edges);
+            crate::edge::preview(&self.cfg.edges, self.cfg.network.cross_delay_ms);
         }
         let style = self.cfg.edges.anim_style;
         if style == EdgeAnimStyle::Random {
@@ -1157,7 +1456,7 @@ impl SettingsApp {
         }
     }
 
-    /// Takes the next key combination pressed in this window as channel `n`'s shortcut.
+    /// Takes the next key combination pressed in this window as the cursor-highlight shortcut.
     fn capture_shortcut(&mut self, ctx: &egui::Context, t: &Texts, n: u8) {
         crate::hotkey::hold_pause();
         ctx.request_repaint_after(Duration::from_millis(500));
@@ -1181,307 +1480,57 @@ impl SettingsApp {
         }
     }
 
-    /// Press and the four hold-and-move gestures, one at a time.
-    fn gesture_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette, cid: u16) {
-        let gestures = [
-            (Gesture::Press, t.gesture_press),
-            (Gesture::Up, "↑"),
-            (Gesture::Down, "↓"),
-            (Gesture::Left, "←"),
-            (Gesture::Right, "→"),
-        ];
-        let moves = self.cfg.button(cid).moves.clone();
-        let labels: Vec<String> = gestures
-            .iter()
-            .map(|(g, l)| if moves.get(*g).is_some_and(|m| m.on) { format!("{l} ✓") } else { l.to_string() })
-            .collect();
-        ui.add_space(10.0);
-        if let Some(i) = segments(ui, p, "gesture-tabs", &labels, Role::Tab, SEG_SMALL, None, None, |i| gestures[i].0 == self.gesture_tab) {
-            self.gesture_tab = gestures[i].0;
-        }
-        hint(ui, p, t.gesture_hint);
-        let g = self.gesture_tab;
-        let slot = if g == Gesture::Press { Slot::Press(cid) } else { Slot::Move(cid, g) };
-        self.action_rows(ui, t, p, slot);
-    }
-
-    /// 이동할 채널 of one slot: "Off", or the one channel a press sends everything to.
-    /// Settings are kept per computer, so this computer's own channel is shown but
-    /// cannot be chosen. "Off" turns the button (or the gesture direction) off.
-    fn action_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette, slot: Slot) {
-        let channels = slot_channels(&self.cfg, slot);
-        let is_on = match slot {
-            Slot::Press(cid) => self.cfg.button(cid).on,
-            Slot::Move(cid, g) => self.cfg.button(cid).moves.get(g).is_some_and(|m| m.on),
+    /// The recordable cursor-highlight shortcut: the keys and buttons to change or clear
+    /// them, and an "i" after the label explaining `info`.
+    fn shortcut_row(&mut self, ui: &mut Ui, t: &Texts, p: Palette, n: u8, label: &str, info: Option<&str>) {
+        let width = (ui.available_width() * 0.66).min(300.0);
+        let (mut start, mut clear) = (false, false);
+        let key = self.cfg.shortcut(n).to_string();
+        let recording = self.recording == Some(n);
+        let failed = !recording && !key.is_empty() && self.status.hotkeys_failed.contains(&n);
+        let (shown, color) = if recording {
+            (t.hotkey_press.to_string(), p.accent)
+        } else if key.is_empty() {
+            (t.hotkey_none.to_string(), p.muted)
+        } else {
+            (crate::hotkey::display(&key), if failed { p.amber } else { p.text })
         };
-        let here = self.status.channel.filter(|c| (1..=3).contains(c));
-        // Shown as chosen: where a press goes from here (older settings may list several).
-        let target = match here {
-            Some(c) if is_on => pick(&channels, c, 3),
-            None if is_on => channels.first().copied(),
-            _ => None,
-        };
-        let labels: Vec<String> = [t.off.to_string()].into_iter().chain((1..=3).map(|n| n.to_string())).collect();
-        let seg_width = (ui.available_width() * 0.6).min(260.0);
-        let mut clicked = None;
-        ui.add_space(2.0);
-        labeled_row(ui, p, t.channels, seg_width, ROW_SMALL, |ui| {
-            // Segment 0 is "Off"; this computer's own channel is shown but locked.
-            let locked = here.map(|c| c as usize);
-            clicked = segments(ui, p, &format!("channels-{slot:?}"), &labels, Role::RadioButton, SEG_SMALL, locked, Some(0), |i| {
-                if i == 0 { !is_on } else { target == Some(i as u8) }
+        labeled_row_info(ui, p, label, info, width, ROW_SMALL, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if !recording && !key.is_empty() && button(ui, p, t.hotkey_clear, ButtonKind::Plain).clicked() {
+                    clear = true;
+                }
+                if !recording && button(ui, p, t.hotkey_change, ButtonKind::Plain).clicked() {
+                    start = true;
+                }
+                ui.add_space(4.0);
+                ui.label(RichText::new(shown).font(bold(14.0)).color(color));
             });
             false
         });
-        if let Some(c) = here {
-            hint(ui, p, &format!("{} {c}: {}", t.channel, t.here_channel));
+        if failed { hint(ui, p, t.hotkey_taken); }
+        if start {
+            self.recording = Some(n);
+            self.error = None;
+            crate::hotkey::hold_pause();
         }
-        let Some(i) = clicked else { return };
-        if i == 0 {
-            if !is_on {
-                return;
-            }
-            match slot {
-                Slot::Press(cid) if self.cfg.triggers() == [cid] => self.error = Some(t.need_one_button.into()),
-                Slot::Press(cid) => self.apply(|c| c.button_mut(cid).on = false),
-                Slot::Move(cid, g) => self.apply(|c| {
-                    if let Some(m) = c.button_mut(cid).moves.get_mut(g) {
-                        m.on = false;
-                    }
-                }),
-            }
-            return;
-        }
-        let n = i as u8;
-        if is_on && channels == [n] {
-            return;
-        }
-        self.apply(|c| {
-            match slot {
-                Slot::Press(cid) => c.button_mut(cid).on = true,
-                Slot::Move(cid, g) => {
-                    if let Some(m) = c.button_mut(cid).moves.get_mut(g) {
-                        m.on = true;
-                    }
-                }
-            }
-            if let Some(channels) = slot_channels_mut(c, slot) {
-                *channels = vec![n];
-            }
-        });
-    }
-
-    fn master_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        section(ui, p, t.master, |ui| {
-            let auto = self.cfg.trigger_device.eq_ignore_ascii_case("auto");
-            let now = self.status.trigger.as_ref().map(|name| format!("{} {name}", t.current));
-            let row = Row { title: t.master_auto, subtitle: now.as_deref(), badge: None };
-            if choice_row(ui, p, Mark::Radio, auto, &row).clicked() && !auto {
-                self.apply(|c| c.trigger_device = "auto".into());
-            }
-            let masters: Vec<DeviceInfo> = self.devices.iter().filter(|d| d.master).cloned().collect();
-            if masters.is_empty() {
-                divider(ui, p);
-                empty(ui, p, t.no_master);
-            }
-            for d in masters {
-                divider(ui, p);
-                let chosen = !auto && self.cfg.trigger_device.eq_ignore_ascii_case(&d.key);
-                let subtitle = device_subtitle(&d, t);
-                let row = Row { title: &d.name, subtitle: Some(&subtitle), badge: away_badge(&d, t, p) };
-                if choice_row(ui, p, Mark::Radio, chosen, &row).clicked() && !chosen {
-                    let key = d.key.clone();
-                    self.apply(|c| c.trigger_device = key);
-                }
-            }
-        });
-    }
-
-    fn group_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        section(ui, p, t.follow, |ui| {
-            ui.add_space(4.0);
-            hint(ui, p, t.follow_hint);
-            let master = self.master_key();
-            let others: Vec<DeviceInfo> = self
-                .devices
-                .iter()
-                .filter(|d| !master.as_ref().is_some_and(|m| m.eq_ignore_ascii_case(&d.key)))
-                .cloned()
-                .collect();
-            let keys: Vec<String> = others.iter().map(|d| d.key.clone()).collect();
-
-            let all = self.cfg.follows_all();
-            let row = Row { title: t.follow_all, subtitle: None, badge: None };
-            if choice_row(ui, p, Mark::Check, all, &row).clicked() {
-                self.apply(|c| c.follow = if all { vec![] } else { vec!["all".into()] });
-            }
-            if others.is_empty() {
-                divider(ui, p);
-                empty(ui, p, t.no_devices);
-            }
-            for d in &others {
-                divider(ui, p);
-                let on = all || self.cfg.follow.iter().any(|f| f.eq_ignore_ascii_case(&d.key));
-                let subtitle = device_subtitle(d, t);
-                let row = Row { title: &d.name, subtitle: Some(&subtitle), badge: away_badge(d, t, p) };
-                if choice_row(ui, p, Mark::Check, on, &row).clicked() {
-                    let key = d.key.clone();
-                    let keys = keys.clone();
-                    self.apply(|c| c.toggle_follow(&keys, &key));
-                }
-            }
-        });
-    }
-
-    /// Haptics in one row of the preferences card, with the button that opens their window.
-    fn haptics_summary(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        let h = &self.cfg.haptics;
-        let state = if h.on_switch || h.on_arrive || h.on_edge { t.haptics_state_on } else { t.haptics_state_off };
-        let strength = if h.intensity == 0 { t.haptics_follow.to_string() } else { format!("{}%", h.intensity) };
-        let line = format!("{state} · {} {strength}", t.haptics_intensity);
-        let mut open = false;
-        // Its own titled card, as on the Mac.
-        section(ui, p, t.section_haptics, |ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_SMALL), Sense::hover());
-            ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, &line, FontId::proportional(14.0), p.text);
-            let width = button_width(ui, t.haptics_open, ButtonKind::Plain);
-            let area = Rect::from_min_max(
-                Pos2::new(rect.right() - width, rect.center().y - 15.0),
-                Pos2::new(rect.right(), rect.center().y + 15.0),
-            );
-            ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
-                open = button(ui, p, t.haptics_open, ButtonKind::Plain).clicked();
-            });
-        });
-        if open {
-            self.stop_recording();
-            let position = ui
-                .ctx()
-                .input(|i| i.viewport().outer_rect)
-                .map(|r| r.center() - Vec2::from(HAPTICS_DIALOG_SIZE) / 2.0);
-            let current = self.cfg.haptics.clone();
-            self.haptics_dialog = Some(HapticsDialog {
-                draft: current.clone(),
-                opened_with: current,
-                position,
-                size: SizeKeeper::fixed(HAPTICS_DIALOG_SIZE),
-            });
-        }
-    }
-
-    /// The haptics window, a real window of its own, while it is open.
-    fn haptics_window(&mut self, ctx: &egui::Context, t: &Texts) {
-        let Some(dialog) = &self.haptics_dialog else { return };
-        let mut builder = egui::ViewportBuilder::default()
-            .with_title(t.haptics_dialog_title)
-            .with_inner_size(HAPTICS_DIALOG_SIZE)
-            .with_resizable(false)
-            .with_minimize_button(false)
-            .with_maximize_button(false);
-        if let Some(position) = dialog.position {
-            builder = builder.with_position(position);
-        }
-        ctx.show_viewport_immediate(haptics_viewport(), builder, |ui, _| self.haptics_dialog_ui(ui, t));
-    }
-
-    fn haptics_dialog_ui(&mut self, ui: &mut Ui, t: &Texts) {
-        let Some(mut dialog) = self.haptics_dialog.take() else { return };
-        keep_size(ui.ctx(), &mut dialog.size);
-        let p = Palette::new(ui.visuals().dark_mode);
-        let closing = ui.ctx().input(|i| i.viewport().close_requested());
-        let (mut apply, mut ok, mut close) = (false, false, closing);
-        let panel = egui::Frame::new().fill(p.bg).inner_margin(Margin::symmetric(18, 14));
-        let d = &mut dialog.draft;
-        let error = self.error.clone();
-        let mut feel = None;
-        egui::CentralPanel::default().frame(panel).show(ui, |ui| {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(ui.available_height() - 46.0).show(ui, |ui| {
-                // What haptics are, then each situation, in two cards with room between rows.
-                let mut on = d.on_switch || d.on_arrive || d.on_edge;
-                card(ui, p, |ui| {
-                    let before = on;
-                    dialog_row(ui, p, t.haptics_master, 48.0, |ui| {
-                        toggle(ui, p, t.haptics_master, &mut on);
-                    });
-                    if on != before {
-                        d.on_switch = on;
-                        d.on_arrive = on;
-                        d.on_edge = on;
-                    }
-                    divider(ui, p);
-                    ui.add_enabled_ui(on, |ui| {
-                        // 0 = as Logi Options+ sets it; otherwise the strength in percent.
-                        let choices: [(u8, &str); 5] = [(0, t.haptics_follow), (25, "25%"), (50, "50%"), (75, "75%"), (100, "100%")];
-                        dialog_row(ui, p, t.haptics_intensity, SITUATION_CONTROLS, |ui| {
-                            segmented(ui, p, "haptic-intensity", &mut d.intensity, &choices, SEG_SMALL);
-                        });
-                    });
-                });
-                ui.add_space(12.0);
-                card(ui, p, |ui| {
-                    ui.add_enabled_ui(on, |ui| {
-                        let pulses: Vec<(u8, &str)> =
-                            waveform::ALL.into_iter().zip(t.waveform_names).chain([(waveform::RANDOM, t.locate_random)]).collect();
-                        if situation_row(ui, p, t, t.haptics_switch, &mut d.on_switch, |ui| {
-                            combo(ui, "pulse-leave", &mut d.switch_waveform, &pulses);
-                        }) {
-                            feel = Some(HapticPreview::Pulse(d.switch_waveform));
-                        }
-                        divider(ui, p);
-                        if situation_row(ui, p, t, t.haptics_arrive, &mut d.on_arrive, |ui| {
-                            combo(ui, "pulse-arrive", &mut d.arrive_waveform, &pulses);
-                        }) {
-                            feel = Some(HapticPreview::Pulse(d.arrive_waveform));
-                        }
-                        divider(ui, p);
-                        let modes = [(true, t.haptics_rising), (false, t.haptics_even)];
-                        if situation_row(ui, p, t, t.haptics_edge, &mut d.on_edge, |ui| {
-                            segmented(ui, p, "edge-pattern", &mut d.progressive, &modes, SEG_SMALL);
-                        }) {
-                            feel = Some(HapticPreview::Edge { rising: d.progressive });
-                        }
-                    });
-                });
-                ui.add_space(8.0);
-                // Below the cards, wrapping to the window's width.
-                egui::Frame::new().inner_margin(Margin::symmetric(4, 0)).show(ui, |ui| hint(ui, p, t.haptics_hint));
-                if let Some(err) = &error {
-                    ui.add_space(8.0);
-                    ui.label(RichText::new(err).color(p.red));
-                }
-            });
-            ui.add_space(10.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                close |= button(ui, p, t.close, ButtonKind::Plain).clicked();
-                ok = button(ui, p, t.ok, ButtonKind::Primary).clicked();
-                apply = button(ui, p, t.apply, ButtonKind::Plain).clicked();
-            });
-        });
-        if let Some(what) = feel {
-            shared::request_haptic_preview(what, dialog.draft.intensity);
-        }
-        if close {
-            // Back to how it was when the window opened, undoing an Apply too.
-            if self.cfg.haptics != dialog.opened_with {
-                let original = dialog.opened_with.clone();
-                self.apply(|c| c.haptics = original);
-            }
-            return;
-        }
-        if apply || ok {
-            let chosen = dialog.draft.clone();
-            self.apply(|c| c.haptics = chosen);
-            if ok && self.error.is_none() {
-                return;
-            }
-        }
-        self.haptics_dialog = Some(dialog);
+        if clear { self.apply(|c| c.set_shortcut(n, "")); }
     }
 
     /// Highlighting the cursor: on/off, the effect, and what brings it up.
     fn locate_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let sub = self.follows_master();
         section(ui, p, t.section_locate, |ui| {
+            if sub {
+                self.follow_banner(ui, p, t);
+            }
+            ui.add_enabled_ui(!sub, |ui| self.locate_rows(ui, t, p));
+        });
+    }
+
+    fn locate_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        {
             let mut on = self.cfg.locate.on;
             if switch_row(ui, p, t.locate_on, &mut on) {
                 self.apply(|c| c.locate.on = on);
@@ -1531,7 +1580,7 @@ impl SettingsApp {
             if self.cfg.locate.on_shake {
                 self.shake_rows(ui, t, p);
             }
-        });
+        }
     }
 
     /// How long the mouse must be shaken, and the key to hold while shaking.
@@ -1550,7 +1599,7 @@ impl SettingsApp {
         }
     }
 
-    /// Haptics, the language, and starting at login.
+    /// The language, and starting at login.
     fn preferences_card(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
         ui.add_space(12.0);
         card(ui, p, |ui| {
@@ -1605,7 +1654,7 @@ impl SettingsApp {
                 UpdateState::Idle => (format!("{} {}", t.update_current, env!("CARGO_PKG_VERSION")), p.text),
                 UpdateState::Checking => (t.update_checking.to_string(), p.muted),
                 UpdateState::UpToDate => (t.update_up_to_date.to_string(), p.green),
-                UpdateState::Available(v) => (format!("{} {v}", t.update_available), p.accent),
+                UpdateState::Available(v) => (format!("{} {v}", t.update_available), p.accent_text),
                 UpdateState::Installing(_) => (t.update_installing.to_string(), p.muted),
                 UpdateState::Failed => (t.update_failed.to_string(), p.amber),
                 UpdateState::InstallFailed(_) => (t.update_install_failed.to_string(), p.amber),
@@ -1738,7 +1787,6 @@ impl SettingsApp {
                     manage_from_note = ui.link(RichText::new(t.backup_manage_open).size(12.5)).clicked();
                 }
             }
-            hint(ui, p, t.backup_hint);
             ui.add_space(8.0);
         });
         let [save, load, manage, open] = clicked;
@@ -1776,7 +1824,12 @@ impl SettingsApp {
     /// load from: each can be renamed (in its row) or deleted (after a second click).
     fn backup_manager(&mut self, ctx: &egui::Context, t: &Texts, p: Palette) {
         let Some(mut m) = self.manager.take() else { return };
-        let frame = egui::Frame::new().fill(p.bg).stroke(Stroke::new(1.0, p.border)).corner_radius(14).inner_margin(Margin::same(18));
+        let frame = egui::Frame::new()
+            .fill(p.bg)
+            .stroke(Stroke::new(1.0, p.border))
+            .corner_radius(16)
+            .inner_margin(Margin::same(18))
+            .shadow(ctx.global_style().visuals.window_shadow);
         let mut close = false;
         let mut action = None;
         let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -1792,11 +1845,10 @@ impl SettingsApp {
             });
             hint(ui, p, t.backup_manage_hint);
             ui.add_space(10.0);
-            card(ui, p, |ui| {
-                if m.files.is_empty() {
-                    empty(ui, p, t.backup_none);
-                    return;
-                }
+            if m.files.is_empty() {
+                empty_card(ui, p, t.backup_none);
+            }
+            card_if(ui, p, !m.files.is_empty(), |ui| {
                 egui::ScrollArea::vertical().max_height(380.0).auto_shrink([false, true]).show(ui, |ui| {
                     for i in 0..m.files.len() {
                         if i > 0 {
@@ -1907,7 +1959,12 @@ impl SettingsApp {
     /// then Load replaces the settings with it once it has passed the checks.
     fn backup_picker(&mut self, ctx: &egui::Context, t: &Texts, p: Palette) {
         let Some(mut picker) = self.picker.take() else { return };
-        let frame = egui::Frame::new().fill(p.bg).stroke(Stroke::new(1.0, p.border)).corner_radius(14).inner_margin(Margin::same(18));
+        let frame = egui::Frame::new()
+            .fill(p.bg)
+            .stroke(Stroke::new(1.0, p.border))
+            .corner_radius(16)
+            .inner_margin(Margin::same(18))
+            .shadow(ctx.global_style().visuals.window_shadow);
         let (mut close, mut load) = (false, false);
         let modal = egui::Modal::new(egui::Id::unique("backup-picker")).frame(frame).show(ctx, |ui| {
             ui.set_width(500.0);
@@ -1915,11 +1972,10 @@ impl SettingsApp {
             ui.label(RichText::new(t.backup_pick_title).font(bold(16.0)).color(p.text));
             hint(ui, p, t.backup_pick_hint);
             ui.add_space(10.0);
-            card(ui, p, |ui| {
-                if picker.files.is_empty() {
-                    empty(ui, p, t.backup_none);
-                    return;
-                }
+            if picker.files.is_empty() {
+                empty_card(ui, p, t.backup_none);
+            }
+            card_if(ui, p, !picker.files.is_empty(), |ui| {
                 egui::ScrollArea::vertical().max_height(300.0).auto_shrink([false, true]).show(ui, |ui| {
                     for i in 0..picker.files.len() {
                         if i > 0 {
@@ -1928,7 +1984,7 @@ impl SettingsApp {
                         let file = &picker.files[i];
                         let subtitle = backup::describe(&file.name).or_else(|| file.modified.map(|time| Stamp::local(time).short()));
                         let row = Row { title: file.stem(), subtitle: subtitle.as_deref(), badge: None };
-                        if choice_row(ui, p, Mark::Radio, picker.chosen == Some(i), &row).clicked() {
+                        if choice_row(ui, p, picker.chosen == Some(i), &row).clicked() {
                             picker.chosen = Some(i);
                             picker.error = None;
                         }
@@ -2015,7 +2071,7 @@ impl SettingsApp {
         }
     }
 
-    /// Asks the running tray app to uninstall (it owns the button), or does it here
+    /// Asks the running tray app to uninstall, or does it here
     /// when no tray app is running.
     fn start_uninstall(&mut self) {
         if crate::main_instance_running() {
@@ -2080,19 +2136,6 @@ fn seconds(ms: u64) -> String {
     if ms.is_multiple_of(1000) { (ms / 1000).to_string() } else { format!("{}", ms as f64 / 1000.0) }
 }
 
-fn device_subtitle(d: &DeviceInfo, t: &Texts) -> String {
-    let kind = match d.kind.as_str() {
-        "mouse" => t.kind_mouse,
-        "keyboard" => t.kind_keyboard,
-        _ => t.kind_other,
-    };
-    format!("{kind} · {}", d.key)
-}
-
-fn away_badge<'a>(d: &DeviceInfo, t: &'a Texts, p: Palette) -> Option<(&'a str, Color32)> {
-    (!d.online).then_some((t.away, p.amber))
-}
-
 // ---- Building blocks -------------------------------------------------------------
 
 /// Two columns side by side, each with the normal spacing inside.
@@ -2123,6 +2166,174 @@ fn color_swatch(ui: &mut Ui, p: Palette, [r, g, b]: [u8; 3], selected: bool) -> 
 }
 
 /// A titled card: the title sits above a rounded panel, as in the system settings.
+/// This computer's private IPv4 addresses (the address each adapter uses).
+fn local_ips() -> Vec<String> {
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+        IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR_IN};
+    let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    let mut size = 16 * 1024u32;
+    // u64 elements keep the buffer aligned for the adapter structs.
+    let mut buf: Vec<u64> = Vec::new();
+    let mut result = 1;
+    for _ in 0..3 {
+        buf = vec![0; (size as usize).div_ceil(8)];
+        // Safety: the buffer is at least `size` bytes; the API fills it with a linked list.
+        result = unsafe { GetAdaptersAddresses(u32::from(AF_INET), flags, std::ptr::null(), buf.as_mut_ptr().cast(), &mut size) };
+        if result != 111 {
+            break;
+        }
+    }
+    let mut ips: Vec<String> = Vec::new();
+    if result != 0 {
+        return ips;
+    }
+    let mut adapter = buf.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+    // Safety: the list lives in `buf`, which outlives the walk.
+    unsafe {
+        while !adapter.is_null() {
+            // Only adapters that are up (operational status 1).
+            if (*adapter).OperStatus == 1 {
+                let mut unicast = (*adapter).FirstUnicastAddress;
+                while !unicast.is_null() {
+                    let sock = (*unicast).Address.lpSockaddr;
+                    if !sock.is_null() && (*sock).sa_family == AF_INET {
+                        let octets = (*(sock as *const SOCKADDR_IN)).sin_addr.S_un.S_addr.to_ne_bytes();
+                        let ip = std::net::Ipv4Addr::from(octets);
+                        if ip.is_private() && !ips.contains(&ip.to_string()) {
+                            ips.push(ip.to_string());
+                        }
+                    }
+                    unicast = (*unicast).Next;
+                }
+            }
+            adapter = (*adapter).Next;
+        }
+    }
+    ips
+}
+
+/// The picture at the top of the "How does it work?" window: this computer, the
+/// encrypted network, the other computer, and the way back.
+fn how_diagram(ui: &mut Ui, p: Palette, t: &Texts) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 118.0), Sense::hover());
+    let painter = ui.painter();
+    let gap = 44.0;
+    let w = (rect.width() - 2.0 * gap) / 3.0;
+    let h = 58.0;
+    let boxes: Vec<Rect> = (0..3)
+        .map(|i| Rect::from_min_size(Pos2::new(rect.left() + i as f32 * (w + gap), rect.top() + 4.0), Vec2::new(w, h)))
+        .collect();
+    for (i, (r, label)) in boxes.iter().zip([t.net_how_this, t.net_how_link, t.net_how_other]).enumerate() {
+        if i == 1 {
+            // The network between the two computers: the dashed, hatched card.
+            painter.add(Shape::Vec(ghost_shapes(*r, 12.0, p)));
+        } else {
+            painter.add(p.card_shadow().as_shape(*r, 12));
+            painter.rect_filled(*r, 12, p.card);
+            painter.rect_stroke(*r, 12, Stroke::new(1.0, p.border), StrokeKind::Inside);
+        }
+        let (first, rest) = label.split_once(" / ").unwrap_or((label, ""));
+        let text = if rest.is_empty() { first.to_string() } else { format!("{first}\n{rest}") };
+        let galley = painter.layout(text, FontId::proportional(12.5), p.text, w - 12.0);
+        painter.galley(r.center() - galley.size() / 2.0, galley, p.text);
+    }
+    // Ink arrows to the other computer, the lime arrow back.
+    let arrow = Stroke::new(1.6, p.text);
+    let head = |tip: Pos2, dir: Vec2, stroke: Stroke| {
+        let side = Vec2::new(-dir.y, dir.x);
+        painter.line_segment([tip, tip - dir * 7.0 + side * 4.0], stroke);
+        painter.line_segment([tip, tip - dir * 7.0 - side * 4.0], stroke);
+    };
+    for pair in boxes.windows(2) {
+        let (from, to) = (Pos2::new(pair[0].right() + 4.0, pair[0].center().y), Pos2::new(pair[1].left() - 4.0, pair[0].center().y));
+        painter.line_segment([from, to], arrow);
+        head(to, Vec2::new(1.0, 0.0), arrow);
+    }
+    // The way back runs under the boxes, from the last to the first.
+    let (start, end) = (Pos2::new(boxes[2].center().x, boxes[2].bottom() + 4.0), Pos2::new(boxes[0].center().x, boxes[0].bottom() + 4.0));
+    let low = rect.top() + h + 30.0;
+    let back = Stroke::new(2.2, p.accent);
+    painter.line_segment([start, Pos2::new(start.x, low)], back);
+    painter.line_segment([Pos2::new(start.x, low), Pos2::new(end.x, low)], back);
+    painter.line_segment([Pos2::new(end.x, low), end], back);
+    head(end, Vec2::new(0.0, -1.0), back);
+    let galley = painter.layout_no_wrap(t.net_how_back.to_string(), FontId::proportional(12.0), p.muted);
+    let label = Rect::from_center_size(Pos2::new(rect.center().x, low), galley.size() + Vec2::new(12.0, 2.0));
+    painter.rect_filled(label, 4, p.bg);
+    painter.galley(label.center() - galley.size() / 2.0, galley, p.muted);
+}
+
+/// The look of "the other computer", like the back card of the app icon: a dashed outline
+/// and light diagonal hatching inside a faint card. Drawn behind what is on it.
+fn ghost_shapes(rect: Rect, radius: f32, p: Palette) -> Vec<Shape> {
+    let mut shapes = vec![Shape::rect_filled(rect, radius, p.card.gamma_multiply(0.45))];
+    // Hatching: lines rising to the right, cut where they leave the rounded rectangle.
+    let inside = |pos: Pos2| {
+        let r = rect.shrink(1.0);
+        if !r.contains(pos) {
+            return false;
+        }
+        let corner = Pos2::new(
+            pos.x.clamp(r.left() + radius, r.right() - radius),
+            pos.y.clamp(r.top() + radius, r.bottom() - radius),
+        );
+        (pos - corner).length() <= radius - 1.0
+    };
+    let (w, h) = (rect.width(), rect.height());
+    let mut k = -h;
+    while k < w {
+        // From the bottom edge up and to the right, in 3 px steps.
+        let at = |t: f32| Pos2::new(rect.left() + k + t, rect.bottom() - t);
+        let (mut run_start, mut t) = (None, 0.0_f32);
+        while t <= h + 3.0 {
+            let ok = inside(at(t));
+            match (ok, run_start) {
+                (true, None) => run_start = Some(t),
+                (false, Some(a)) => {
+                    shapes.push(Shape::line_segment([at(a), at(t - 3.0)], Stroke::new(1.0, p.hatch)));
+                    run_start = None;
+                }
+                _ => {}
+            }
+            t += 3.0;
+        }
+        if let Some(a) = run_start {
+            shapes.push(Shape::line_segment([at(a), at(t - 3.0)], Stroke::new(1.0, p.hatch)));
+        }
+        k += 9.0;
+    }
+    // The dashed outline: 6 on, 5 off.
+    let mut path = Vec::new();
+    let r = rect.shrink(0.6);
+    for (center, from) in [
+        (Pos2::new(r.right() - radius, r.top() + radius), -90.0_f32),
+        (Pos2::new(r.right() - radius, r.bottom() - radius), 0.0),
+        (Pos2::new(r.left() + radius, r.bottom() - radius), 90.0),
+        (Pos2::new(r.left() + radius, r.top() + radius), 180.0),
+    ] {
+        for step in 0..=6 {
+            let a = (from + 15.0 * step as f32).to_radians();
+            path.push(center + Vec2::new(a.cos(), a.sin()) * radius);
+        }
+    }
+    path.push(path[0]);
+    shapes.extend(Shape::dashed_line(&path, Stroke::new(1.2, p.dash), 6.0, 5.0));
+    shapes
+}
+
+/// The small muted title above a card.
+fn heading(ui: &mut Ui, p: Palette, title: &str) {
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.add_space(4.0);
+        ui.label(RichText::new(title).font(bold(13.0)).color(p.muted));
+    });
+    ui.add_space(2.0);
+}
+
 fn section(ui: &mut Ui, p: Palette, title: &str, add: impl FnOnce(&mut Ui)) {
     section_info(ui, p, title, None, add);
 }
@@ -2162,7 +2373,7 @@ fn info_after(ui: &mut Ui, p: Palette, label: Rect, text: &str) -> Response {
 
 fn paint_info(ui: &mut Ui, p: Palette, resp: Response, text: &str) -> Response {
     resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, text));
-    let color = if resp.hovered() || resp.has_focus() { p.accent } else { p.muted };
+    let color = if resp.hovered() || resp.has_focus() { p.text } else { p.muted };
     let c = resp.rect.center();
     let painter = ui.painter();
     painter.circle_stroke(c, 7.5, Stroke::new(1.3, color));
@@ -2174,11 +2385,34 @@ fn paint_info(ui: &mut Ui, p: Palette, resp: Response, text: &str) -> Response {
     })
 }
 
+fn section_with(ui: &mut Ui, p: Palette, title: &str, info: Option<&str>, note: Option<(&str, Color32)>, add: impl FnOnce(&mut Ui)) {
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.add_space(4.0);
+        let label = ui.label(RichText::new(title).font(bold(13.0)).color(p.muted));
+        if let Some(text) = info {
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(20.0, label.rect.height()), Sense::hover());
+            let response = ui.interact(rect, egui::Id::unique(("net-info", title)), Sense::click());
+            paint_info(ui, p, response, text);
+        }
+        if let Some((text, color)) = note {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add_space(4.0);
+                ui.add(egui::Label::new(RichText::new(text).size(12.0).color(color)).truncate());
+            });
+        }
+    });
+    ui.add_space(2.0);
+    card(ui, p, add);
+}
+
+
 fn card(ui: &mut Ui, p: Palette, add: impl FnOnce(&mut Ui)) {
     egui::Frame::new()
         .fill(p.card)
         .stroke(Stroke::new(1.0, p.border))
-        .corner_radius(12)
+        .shadow(p.card_shadow())
+        .corner_radius(16)
         .inner_margin(Margin::symmetric(18, 6))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -2187,27 +2421,35 @@ fn card(ui: &mut Ui, p: Palette, add: impl FnOnce(&mut Ui)) {
         });
 }
 
-/// What the app expects before it is set up: Logi Options+ with the buttons on "No action".
-fn notice(ui: &mut Ui, p: Palette, t: &Texts) {
-    ui.add_space(12.0);
-    egui::Frame::new()
-        .fill(p.accent.gamma_multiply(0.10))
-        .stroke(Stroke::new(1.0, p.accent.gamma_multiply(0.45)))
-        .corner_radius(12)
-        .inner_margin(Margin::symmetric(16, 12))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = 4.0;
-            ui.label(RichText::new(format!("ⓘ  {}", t.notice_title)).font(bold(14.0)).color(p.accent));
-            ui.label(RichText::new(t.notice).size(12.5).color(p.text));
-        });
+/// A card only when `show`: a list that is empty is drawn as a ghost card instead.
+fn card_if(ui: &mut Ui, p: Palette, show: bool, add: impl FnOnce(&mut Ui)) {
+    if show {
+        card(ui, p, add);
+    }
+}
+
+/// A card for "the other computer" (an offline one, one not yet paired, an empty list):
+/// dashed outline and hatching instead of a solid fill.
+fn ghost_card(ui: &mut Ui, p: Palette, add: impl FnOnce(&mut Ui)) {
+    let slot = ui.painter().add(Shape::Noop);
+    let shown = egui::Frame::new().corner_radius(16).inner_margin(Margin::symmetric(18, 6)).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.spacing_mut().item_spacing.y = 0.0;
+        add(ui);
+    });
+    ui.painter().set(slot, Shape::Vec(ghost_shapes(shown.response.rect, 16.0, p)));
+}
+
+/// A ghost card holding only a line saying there is nothing here yet.
+fn empty_card(ui: &mut Ui, p: Palette, text: &str) {
+    ghost_card(ui, p, |ui| empty(ui, p, text));
 }
 
 /// A quiet box of explanation text.
 fn info_box(ui: &mut Ui, p: Palette, text: &str) {
     egui::Frame::new()
         .fill(p.card.gamma_multiply(0.5))
-        .corner_radius(10)
+        .corner_radius(12)
         .inner_margin(Margin::symmetric(14, 10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -2236,24 +2478,6 @@ fn empty(ui: &mut Ui, p: Palette, text: &str) {
     ui.add_space(8.0);
     ui.label(RichText::new(text).size(13.0).color(p.muted));
     ui.add_space(8.0);
-}
-
-/// A row with just a label (the setting's rows follow), and a `note` in smaller amber
-/// text under it.
-fn title_row(ui: &mut Ui, p: Palette, label: &str, note: Option<&str>) {
-    let h = if note.is_some() { 50.0 } else { 40.0 };
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
-    let painter = ui.painter();
-    let left = Pos2::new(rect.left(), rect.center().y);
-    match note {
-        Some(note) => {
-            painter.text(left - Vec2::new(0.0, 1.0), Align2::LEFT_BOTTOM, label, FontId::proportional(14.5), p.text);
-            painter.text(left + Vec2::new(0.0, 3.0), Align2::LEFT_TOP, note, FontId::proportional(12.5), p.amber);
-        }
-        None => {
-            painter.text(left, Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
-        }
-    }
 }
 
 /// A row with a label and an on/off switch on the right. Returns true when flipped.
@@ -2287,13 +2511,16 @@ fn switch_response(resp: Response, label: &str, on: &mut bool) -> Response {
     resp
 }
 
-/// Draws an on/off switch in `track`, sliding between off and on.
+/// Draws an on/off switch in `track`, sliding between off and on: a gray track that turns
+/// lime, and a white knob with a faint ink outline so it reads on the light ground.
 fn paint_switch(ui: &Ui, p: Palette, id: egui::Id, track: Rect, on: bool) {
     let how_on = ui.ctx().animate_bool_responsive(id, on);
     let painter = ui.painter();
-    painter.rect_filled(track, 12, p.track.lerp_to_gamma(p.accent, how_on));
+    painter.rect_filled(track, 12, p.off.lerp_to_gamma(p.accent, how_on));
     let x = egui::lerp(track.left() + 12.0..=track.right() - 12.0, how_on);
-    painter.circle_filled(Pos2::new(x, track.center().y), 9.5, Color32::WHITE);
+    let knob = Pos2::new(x, track.center().y);
+    painter.circle_filled(knob, 9.5, Color32::WHITE);
+    painter.circle_stroke(knob, 9.5, Stroke::new(1.0, p.ink.gamma_multiply(0.10)));
 }
 
 const ROW_NORMAL: f32 = 52.0;
@@ -2351,18 +2578,14 @@ const CONTROL_HEIGHT: f32 = 28.0;
 const BUTTON_MIN_WIDTH: f32 = 84.0;
 const SEG_SMALL: SegSize = SegSize { height: CONTROL_HEIGHT, text: 13.0 };
 
-/// A chosen segment's accent, drained of most of its colour and sunk toward the track:
-/// reads as taken, but not available.
+/// A taken segment: the gray of "Off" sunk toward the track, so it reads as taken, but
+/// not available.
 fn locked_fill(p: Palette) -> Color32 {
-    let [r, g, b, _] = p.accent.to_array();
-    let gray = 0.3 * r as f32 + 0.59 * g as f32 + 0.11 * b as f32;
-    let [tr, tg, tb, _] = p.track.to_array();
-    let mix = |c: u8, t: u8| (c as f32 * 0.25 + gray * 0.25 + t as f32 * 0.5) as u8;
-    Color32::from_rgb(mix(r, tr), mix(g, tg), mix(b, tb))
+    p.off.lerp_to_gamma(p.track, 0.5)
 }
 
-/// Equal-width segments on one shared bar (tabs, channels, one-of-several choices).
-/// `selected(i)` says which are on; returns the index clicked.
+/// Equal-width segments in one row on a shared bar: the chosen one is lime with ink text.
+/// `selected(i)` says which is on; returns the index clicked.
 #[allow(clippy::too_many_arguments)]
 fn segments(
     ui: &mut Ui,
@@ -2371,14 +2594,14 @@ fn segments(
     labels: &[String],
     role: Role,
     size: SegSize,
-    // A segment shown but not clickable (this computer's channel).
-    locked: Option<usize>,
+    // Segments shown but not clickable (a side another computer already sits on).
+    locked: &[usize],
     // The "Off" segment: chosen, it is drawn gray instead of in the accent colour.
     off: Option<usize>,
     selected: impl Fn(usize) -> bool,
 ) -> Option<usize> {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), size.height), Sense::hover());
-    ui.painter().rect_filled(rect, 8, p.track.gamma_multiply(0.55));
+    ui.painter().rect_filled(rect, 8, p.track);
     let w = rect.width() / labels.len() as f32;
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
@@ -2387,7 +2610,7 @@ fn segments(
         // Named per bar: the rows sit in look-alike child areas, so an id derived from
         // the area would be shared and one bar's click would also hit the other.
         let id = egui::Id::unique(("segment", name, i));
-        let locked = locked == Some(i);
+        let locked = locked.contains(&i);
         let resp = if locked {
             ui.interact(seg, id, Sense::hover())
         } else {
@@ -2399,16 +2622,17 @@ fn segments(
             clicked = Some(i);
         }
         let painter = ui.painter();
+        // Chosen: lime with ink text ("Off" in its gray); the others sit on the track.
         let (fill, color) = if locked {
-            (locked_fill(p), Color32::WHITE.gamma_multiply(0.7))
+            (locked_fill(p), p.muted)
         } else if on && off == Some(i) {
-            (p.off, Color32::WHITE)
+            (p.off, p.text)
         } else if on {
-            (p.accent, Color32::WHITE)
+            (p.accent, p.ink)
         } else if resp.hovered() {
-            (p.card.gamma_multiply(0.6), p.text)
+            (p.hover, p.text)
         } else {
-            (Color32::TRANSPARENT, p.text)
+            (Color32::TRANSPARENT, p.muted)
         };
         painter.rect_filled(seg, 7, fill);
         if locked {
@@ -2448,7 +2672,7 @@ fn segmented<T: PartialEq + Copy>(
     size: SegSize,
 ) -> bool {
     let labels: Vec<String> = options.iter().map(|(_, l)| l.to_string()).collect();
-    match segments(ui, p, name, &labels, Role::RadioButton, size, None, None, |i| options[i].0 == *value) {
+    match segments(ui, p, name, &labels, Role::RadioButton, size, &[], None, |i| options[i].0 == *value) {
         Some(i) if options[i].0 != *value => {
             *value = options[i].0;
             true
@@ -2475,56 +2699,6 @@ fn size_row(ui: &mut Ui, p: Palette, t: &Texts, name: &str, size: &mut u16) -> b
     let choices: Vec<(u16, &str)> = EFFECT_SIZES.iter().copied().zip(labels.iter().map(String::as_str)).collect();
     let width = (ui.available_width() * 0.72).min(300.0);
     labeled_row(ui, p, t.effect_size, width, ROW_SMALL, |ui| segmented(ui, p, name, size, &choices, SEG_SMALL))
-}
-
-/// Width of what sits right of a situation's name in the haptics window.
-const SITUATION_CONTROLS: f32 = 360.0;
-/// The haptics window's rows are taller than a card's usual ones, for air between them.
-const DIALOG_ROW: f32 = 50.0;
-
-/// A situation of the haptics window on one line: its name, the control that shapes its
-/// pulse, a button to feel it, and its switch. True when Feel was pressed.
-fn situation_row(ui: &mut Ui, p: Palette, t: &Texts, label: &str, on: &mut bool, control: impl FnOnce(&mut Ui)) -> bool {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), DIALOG_ROW), Sense::hover());
-    ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
-    let area = Rect::from_min_max(
-        Pos2::new(rect.right() - SITUATION_CONTROLS, rect.center().y - 15.0),
-        Pos2::new(rect.right(), rect.center().y + 15.0),
-    );
-    let mut pressed = false;
-    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            toggle(ui, p, label, on);
-            let enabled = *on;
-            ui.add_enabled_ui(enabled, |ui| {
-                pressed = button(ui, p, t.haptics_feel, ButtonKind::Plain).clicked();
-                control(ui);
-            });
-        });
-    });
-    pressed
-}
-
-/// A row of the haptics window: its name, and a control `width` wide on the right.
-fn dialog_row(ui: &mut Ui, p: Palette, label: &str, width: f32, control: impl FnOnce(&mut Ui)) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), DIALOG_ROW), Sense::hover());
-    ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
-    let area = Rect::from_min_max(
-        Pos2::new(rect.right() - width, rect.center().y - 15.0),
-        Pos2::new(rect.right(), rect.center().y + 15.0),
-    );
-    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
-    });
-}
-
-/// The on/off switch of a row, on its own. True when flipped.
-fn toggle(ui: &mut Ui, p: Palette, label: &str, on: &mut bool) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(SWITCH_SIZE, Sense::click());
-    let resp = switch_response(resp, label, on);
-    paint_switch(ui, p, resp.id, rect, *on);
-    resp.clicked()
 }
 
 /// An explanation on the left and buttons on the right. Returns the index clicked.
@@ -2642,20 +2816,639 @@ fn rename_error(t: &Texts, e: &RenameError) -> String {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Mark {
-    Radio,
-    Check,
-}
-
 struct Row<'a> {
     title: &'a str,
     subtitle: Option<&'a str>,
     badge: Option<(&'a str, Color32)>,
 }
 
-/// A selectable list row: radio/check mark, title, optional second line and badge.
-fn choice_row(ui: &mut Ui, p: Palette, mark: Mark, selected: bool, row: &Row) -> Response {
+/// A selectable list row: radio mark, title, optional second line and badge.
+fn choice_row(ui: &mut Ui, p: Palette, selected: bool, row: &Row) -> Response {
+    let h = if row.subtitle.is_some() { 46.0 } else { 38.0 };
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    resp.widget_info(|| WidgetInfo::selected(Role::RadioButton, true, selected, row.title));
+    let painter = ui.painter();
+    if resp.hovered() {
+        painter.rect_filled(rect.expand2(Vec2::new(8.0, -3.0)), 8, p.hover);
+    }
+
+    let c = Pos2::new(rect.left() + 10.0, rect.center().y);
+    if selected {
+        painter.circle_filled(c, 10.0, p.accent);
+        painter.circle_filled(c, 4.0, p.ink);
+    } else {
+        painter.circle_stroke(c, 9.25, Stroke::new(1.5, p.off));
+    }
+
+    let x = rect.left() + 32.0;
+    let mut right = rect.right();
+    if let Some((text, color)) = row.badge {
+        let galley = painter.layout_no_wrap(text.to_string(), FontId::proportional(12.0), color);
+        let pill = Rect::from_min_size(
+            Pos2::new(right - galley.size().x - 16.0, rect.center().y - 11.0),
+            Vec2::new(galley.size().x + 16.0, 22.0),
+        );
+        painter.rect_filled(pill, 11, color.gamma_multiply(0.14));
+        painter.galley(pill.center() - galley.size() / 2.0, galley, color);
+        right = pill.left() - 8.0;
+    }
+    let clip = Rect::from_min_max(rect.min, Pos2::new(right, rect.max.y));
+    let painter = painter.with_clip_rect(clip.intersect(painter.clip_rect()));
+    match row.subtitle {
+        Some(sub) => {
+            painter.text(Pos2::new(x, rect.center().y - 1.0), Align2::LEFT_BOTTOM, row.title, FontId::proportional(14.5), p.text);
+            painter.text(Pos2::new(x, rect.center().y + 3.0), Align2::LEFT_TOP, sub, FontId::proportional(12.5), p.muted);
+        }
+        None => {
+            painter.text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, row.title, FontId::proportional(14.5), p.text);
+        }
+    }
+    resp
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ButtonKind {
+    Plain,
+    Primary,
+    Danger,
+    DangerFilled,
+}
+
+fn button_font(kind: ButtonKind) -> FontId {
+    if matches!(kind, ButtonKind::DangerFilled | ButtonKind::Primary) { bold(14.0) } else { FontId::proportional(14.0) }
+}
+
+fn button_width(ui: &Ui, label: &str, kind: ButtonKind) -> f32 {
+    let text = ui.painter().layout_no_wrap(label.to_string(), button_font(kind), Color32::WHITE).size().x;
+    (text + 28.0).max(BUTTON_MIN_WIDTH)
+}
+
+fn button(ui: &mut Ui, p: Palette, label: &str, kind: ButtonKind) -> Response {
+    let font = button_font(kind);
+    let size = Vec2::new(button_width(ui, label, kind), CONTROL_HEIGHT);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
+    let hovered = resp.hovered();
+    let (fill, stroke, color) = match kind {
+        ButtonKind::Plain => (if hovered { p.hover } else { p.card }, p.track, p.text),
+        // Lime with ink text, never white.
+        ButtonKind::Primary => (if hovered { p.accent.lerp_to_gamma(p.ink, 0.12) } else { p.accent }, p.accent, p.ink),
+        // Red text on a light red tint.
+        ButtonKind::Danger => (p.red.gamma_multiply(if hovered { 0.22 } else { 0.12 }), Color32::TRANSPARENT, p.red),
+        ButtonKind::DangerFilled => (if hovered { p.red.gamma_multiply(0.85) } else { p.red }, p.red, Color32::WHITE),
+    };
+    let painter = ui.painter();
+    painter.rect_filled(rect, CornerRadius::same(9), fill);
+    painter.rect_stroke(rect, 9, Stroke::new(1.0, stroke), StrokeKind::Inside);
+    painter.text(rect.center(), Align2::CENTER_CENTER, label, font, color);
+    resp
+}
+
+/// A shortcut as stored in the settings ("ctrl+alt+1"), or None for keys that make no
+/// good shortcut: a number, letter or F key, with ⌃/⌥/⌘ (Ctrl/Alt) unless it is an F key.
+fn shortcut_text(key: egui::Key, m: egui::Modifiers) -> Option<String> {
+    let name = key.name();
+    let f_key = name.len() > 1 && name.starts_with('F') && name[1..].parse::<u8>().is_ok();
+    let plain = name.len() == 1 && name.chars().all(|c| c.is_ascii_alphanumeric());
+    if !(f_key || plain) || (!f_key && !(m.ctrl || m.alt || m.mac_cmd)) {
+        return None;
+    }
+    let mods = [(m.ctrl, "ctrl"), (m.alt, "alt"), (m.shift, "shift"), (m.mac_cmd, "super")];
+    let mut parts: Vec<&str> = mods.iter().filter(|x| x.0).map(|x| x.1).collect();
+    parts.push(name);
+    Some(parts.join("+").to_lowercase())
+}
+
+impl SettingsApp {
+    fn master_key(&self) -> Option<String> {
+        if self.cfg.trigger_device.eq_ignore_ascii_case("auto") {
+            self.status
+                .trigger_key
+                .clone()
+                .or_else(|| self.devices.iter().find(|d| d.master).map(|d| d.key.clone()))
+        } else {
+            Some(self.cfg.trigger_device.clone())
+        }
+    }
+    fn switching_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        ui.add_space(12.0);
+        info_box(ui, p, t.notice_title);
+        info_box(ui, p, t.notice);
+        info_box(ui, p, t.switching_help);
+        if self.cfg.network.on { self.easy_switch_hint(ui, t, p); }
+        ui.add_space(10.0);
+        card(ui, p, |ui| {
+            let mut enabled = self.cfg.enabled;
+            if switch_row(ui, p, t.enabled, &mut enabled) {
+                self.apply(|c| c.enabled = enabled);
+            }
+        });
+
+        let buttons = [
+            (BUTTON_WHEEL_MODE, t.button_wheel_mode_short, t.button_wheel_mode),
+            (BUTTON_GESTURE, t.button_gesture_short, t.button_gesture),
+            (BUTTON_MIDDLE, t.button_middle_short, t.button_middle),
+        ];
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.add_space(4.0);
+            ui.label(RichText::new(t.section_buttons).font(bold(13.0)).color(p.muted));
+        });
+        ui.add_space(4.0);
+        let tab_ids: Vec<u16> = buttons.iter().map(|b| b.0).chain([SHORTCUTS_TAB, EDGES_TAB]).collect();
+        let labels: Vec<String> = buttons
+            .iter()
+            .map(|(cid, short, _)| (*short, self.cfg.button(*cid).on))
+            .chain([(t.hotkeys_short, self.cfg.hotkeys.on), (t.edges_short, self.cfg.edges.any())])
+            .map(|(short, on)| if on { format!("{short} ✓") } else { short.to_string() })
+            .collect();
+        if let Some(i) = segments(ui, p, "button-tabs", &labels, Role::Tab, SEG_NORMAL, &[], None, |i| tab_ids[i] == self.button_tab) {
+            self.button_tab = tab_ids[i];
+            self.stop_recording();
+        }
+        if self.button_tab == SHORTCUTS_TAB {
+            ui.add_space(8.0);
+            card(ui, p, |ui| self.shortcut_rows(ui, t, p));
+            return;
+        }
+        if self.button_tab == EDGES_TAB {
+            ui.add_space(8.0);
+            card(ui, p, |ui| self.edge_rows(ui, t, p));
+            return;
+        }
+        let (cid, _, label) = buttons.into_iter().find(|b| b.0 == self.button_tab).unwrap_or(buttons[0]);
+
+        ui.add_space(8.0);
+        card(ui, p, |ui| {
+            // Only known while the master mouse is on this computer. The button is
+            // turned off with the "Off" segment of its channel row.
+            let missing = self.status.trigger.is_some() && !self.status.buttons.contains(&cid);
+            title_row(ui, p, label, missing.then_some(t.not_on_mouse));
+            divider(ui, p);
+            if cid == BUTTON_GESTURE {
+                self.gesture_rows(ui, t, p, cid);
+            } else {
+                self.action_rows(ui, t, p, Slot::Press(cid));
+            }
+            if cid == BUTTON_MIDDLE {
+                hint(ui, p, t.buttons_hint);
+            }
+            if cid == BUTTON_WHEEL_MODE && self.cfg.button(cid).on {
+                divider(ui, p);
+                let mut keep = self.cfg.keep_wheel_mode;
+                let flipped = switch_row_info(ui, p, t.keep_wheel_mode, Some(t.keep_wheel_mode_help), &mut keep);
+                if flipped {
+                    self.apply(|c| c.keep_wheel_mode = keep);
+                }
+            }
+            ui.add_space(10.0);
+        });
+    }
+    fn shortcut_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let mut on = self.cfg.hotkeys.on;
+        let flipped = switch_row_info(ui, p, t.hotkeys_title, Some(t.hotkey_help), &mut on);
+        if flipped {
+            self.apply(|c| c.hotkeys.on = on);
+            self.stop_recording();
+        }
+        hint(ui, p, t.hotkeys_hint);
+        if !self.cfg.hotkeys.on {
+            ui.add_space(10.0);
+            return;
+        }
+        ui.add_space(6.0);
+        divider(ui, p);
+        for n in 1..=3u8 {
+            self.shortcut_row(ui, t, p, n, &format!("{} {n}", t.channel), None);
+        }
+        ui.add_space(10.0);
+    }
+    fn edge_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let mut on = self.cfg.edges.on;
+        if switch_row(ui, p, t.edges_title, &mut on) {
+            if on && self.cfg.network.on { self.edge_confirm = true; }
+            else { self.apply(|c| c.edges.on = on); }
+        }
+        if self.cfg.network.on { hint(ui, p, t.edges_network_hint); }
+        let editable = !self.cfg.network.on;
+        ui.add_enabled_ui(editable, |ui| {
+        title_row(ui, p, t.edges_title, None);
+        hint(ui, p, t.edges_hint);
+        ui.add_space(6.0);
+        divider(ui, p);
+        two_columns(ui, |left, right| {
+            self.edge_sides(left, t, p);
+            self.edge_wait(right, t, p);
+        });
+        });
+        ui.add_space(8.0);
+    }
+    fn edge_sides(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let here = self.status.channel.filter(|c| (1..=3).contains(c));
+        let labels: Vec<String> = [t.off.to_string()].into_iter().chain((1..=3).map(|n| n.to_string())).collect();
+        let width = (ui.available_width() * 0.66).min(260.0);
+        let sides = [(Edge::Left, t.edge_left), (Edge::Right, t.edge_right), (Edge::Top, t.edge_top), (Edge::Bottom, t.edge_bottom)];
+        for (edge, label) in sides {
+            let current = self.cfg.edges.channel(edge);
+            let mut clicked = None;
+            labeled_row(ui, p, label, width, ROW_SMALL, |ui| {
+                // Segment 0 is "off"; this computer's own channel is shown but locked.
+                clicked = segments(ui, p, &format!("edge-{edge:?}"), &labels, Role::RadioButton, SEG_SMALL, &here.map(|c| c as usize).into_iter().collect::<Vec<_>>(), Some(0), |i| {
+                    i as u8 == current
+                });
+                false
+            });
+            if let Some(n) = clicked.map(|i| i as u8).filter(|&n| n != current) {
+                self.apply(|c| {
+                    *c.edges.channel_mut(edge) = n;
+                    c.edges.on = c.edges.any();
+                });
+            }
+        }
+        if let Some(c) = here {
+            hint(ui, p, &format!("{} {c}: {}", t.channel, t.here_channel));
+        }
+        ui.add_space(4.0);
+        divider(ui, p);
+        let choices: Vec<(u64, String)> = [(300, "0.3"), (500, "0.5"), (1000, "1"), (2000, "2")]
+            .into_iter()
+            .map(|(ms, text)| (ms, format!("{text}{}", t.seconds_short)))
+            .collect();
+        let choices: Vec<(u64, &str)> = choices.iter().map(|(ms, s)| (*ms, s.as_str())).collect();
+        let mut dwell = self.cfg.edges.dwell_ms;
+        if labeled_row(ui, p, t.edge_dwell, width, ROW_SMALL, |ui| segmented(ui, p, "edge-dwell", &mut dwell, &choices, SEG_SMALL)) {
+            self.apply(|c| c.edges.dwell_ms = dwell);
+        }
+        divider(ui, p);
+        let mut place = self.cfg.edges.place_cursor;
+        if switch_row(ui, p, t.edge_place, &mut place) {
+            self.apply(|c| c.edges.place_cursor = place);
+        }
+        hint(ui, p, t.edges_corner_hint);
+    }
+    fn edge_wait(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        // A sub shows the master's effect settings and cannot change them.
+        let sub = self.follows_master();
+        if sub {
+            self.follow_banner(ui, p, t);
+        }
+        ui.add_enabled_ui(!sub, |ui| {
+            let mut control = self.cfg.edges.require_control;
+            if switch_row(ui, p, t.edge_require_control, &mut control) {
+                self.apply(|c| c.edges.require_control = control);
+            }
+            hint(ui, p, t.edge_require_control_hint);
+            ui.add_space(6.0);
+            divider(ui, p);
+            self.edge_anim_rows(ui, t, p);
+        });
+    }
+    fn gesture_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette, cid: u16) {
+        let gestures = [
+            (Gesture::Press, t.gesture_press),
+            (Gesture::Up, "↑"),
+            (Gesture::Down, "↓"),
+            (Gesture::Left, "←"),
+            (Gesture::Right, "→"),
+        ];
+        let moves = self.cfg.button(cid).moves.clone();
+        let labels: Vec<String> = gestures
+            .iter()
+            .map(|(g, l)| if moves.get(*g).is_some_and(|m| m.on) { format!("{l} ✓") } else { l.to_string() })
+            .collect();
+        ui.add_space(10.0);
+        if let Some(i) = segments(ui, p, "gesture-tabs", &labels, Role::Tab, SEG_SMALL, &[], None, |i| gestures[i].0 == self.gesture_tab) {
+            self.gesture_tab = gestures[i].0;
+        }
+        hint(ui, p, t.gesture_hint);
+        let g = self.gesture_tab;
+        let slot = if g == Gesture::Press { Slot::Press(cid) } else { Slot::Move(cid, g) };
+        self.action_rows(ui, t, p, slot);
+    }
+    fn action_rows(&mut self, ui: &mut Ui, t: &Texts, p: Palette, slot: Slot) {
+        let channels = slot_channels(&self.cfg, slot);
+        let is_on = match slot {
+            Slot::Press(cid) => self.cfg.button(cid).on,
+            Slot::Move(cid, g) => self.cfg.button(cid).moves.get(g).is_some_and(|m| m.on),
+        };
+        let here = self.status.channel.filter(|c| (1..=3).contains(c));
+        // Shown as chosen: where a press goes from here (older settings may list several).
+        let target = match here {
+            Some(c) if is_on => pick(&channels, c, 3),
+            None if is_on => channels.first().copied(),
+            _ => None,
+        };
+        let labels: Vec<String> = [t.off.to_string()].into_iter().chain((1..=3).map(|n| n.to_string())).collect();
+        let seg_width = (ui.available_width() * 0.6).min(260.0);
+        let mut clicked = None;
+        ui.add_space(2.0);
+        labeled_row(ui, p, t.channels, seg_width, ROW_SMALL, |ui| {
+            // Segment 0 is "Off"; this computer's own channel is shown but locked.
+            let locked: Vec<usize> = here.map(|c| c as usize).into_iter().collect();
+            clicked = segments(ui, p, &format!("channels-{slot:?}"), &labels, Role::RadioButton, SEG_SMALL, &locked, Some(0), |i| {
+                if i == 0 { !is_on } else { target == Some(i as u8) }
+            });
+            false
+        });
+        if let Some(c) = here {
+            hint(ui, p, &format!("{} {c}: {}", t.channel, t.here_channel));
+        }
+        let Some(i) = clicked else { return };
+        if i == 0 {
+            if !is_on {
+                return;
+            }
+            match slot {
+                Slot::Press(cid) if self.cfg.triggers() == [cid] => self.error = Some(t.need_one_button.into()),
+                Slot::Press(cid) => self.apply(|c| c.button_mut(cid).on = false),
+                Slot::Move(cid, g) => self.apply(|c| {
+                    if let Some(m) = c.button_mut(cid).moves.get_mut(g) {
+                        m.on = false;
+                    }
+                }),
+            }
+            return;
+        }
+        let n = i as u8;
+        if is_on && channels == [n] {
+            return;
+        }
+        self.apply(|c| {
+            match slot {
+                Slot::Press(cid) => c.button_mut(cid).on = true,
+                Slot::Move(cid, g) => {
+                    if let Some(m) = c.button_mut(cid).moves.get_mut(g) {
+                        m.on = true;
+                    }
+                }
+            }
+            if let Some(channels) = slot_channels_mut(c, slot) {
+                *channels = vec![n];
+            }
+        });
+    }
+    fn master_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        section(ui, p, t.master, |ui| {
+            let auto = self.cfg.trigger_device.eq_ignore_ascii_case("auto");
+            let now = self.status.trigger.as_ref().map(|name| format!("{} {name}", t.current));
+            let row = Row { title: t.master_auto, subtitle: now.as_deref(), badge: None };
+            if device_choice_row(ui, p, Mark::Radio, auto, &row).clicked() && !auto {
+                self.apply(|c| c.trigger_device = "auto".into());
+            }
+            let masters: Vec<DeviceInfo> = self.devices.iter().filter(|d| d.master).cloned().collect();
+            if masters.is_empty() {
+                divider(ui, p);
+                empty(ui, p, t.no_master);
+            }
+            for d in masters {
+                divider(ui, p);
+                let chosen = !auto && self.cfg.trigger_device.eq_ignore_ascii_case(&d.key);
+                let subtitle = device_subtitle(&d, t);
+                let row = Row { title: &d.name, subtitle: Some(&subtitle), badge: away_badge(&d, t, p) };
+                if device_choice_row(ui, p, Mark::Radio, chosen, &row).clicked() && !chosen {
+                    let key = d.key.clone();
+                    self.apply(|c| c.trigger_device = key);
+                }
+            }
+        });
+    }
+    fn group_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        section(ui, p, t.follow, |ui| {
+            ui.add_space(4.0);
+            hint(ui, p, t.follow_hint);
+            let master = self.master_key();
+            let others: Vec<DeviceInfo> = self
+                .devices
+                .iter()
+                .filter(|d| !master.as_ref().is_some_and(|m| m.eq_ignore_ascii_case(&d.key)))
+                .cloned()
+                .collect();
+            let keys: Vec<String> = others.iter().map(|d| d.key.clone()).collect();
+
+            let all = self.cfg.follows_all();
+            let row = Row { title: t.follow_all, subtitle: None, badge: None };
+            if device_choice_row(ui, p, Mark::Check, all, &row).clicked() {
+                self.apply(|c| c.follow = if all { vec![] } else { vec!["all".into()] });
+            }
+            if others.is_empty() {
+                divider(ui, p);
+                empty(ui, p, t.no_devices);
+            }
+            for d in &others {
+                divider(ui, p);
+                let on = all || self.cfg.follow.iter().any(|f| f.eq_ignore_ascii_case(&d.key));
+                let subtitle = device_subtitle(d, t);
+                let row = Row { title: &d.name, subtitle: Some(&subtitle), badge: away_badge(d, t, p) };
+                if device_choice_row(ui, p, Mark::Check, on, &row).clicked() {
+                    let key = d.key.clone();
+                    let keys = keys.clone();
+                    self.apply(|c| c.toggle_follow(&keys, &key));
+                }
+            }
+        });
+    }
+    fn haptics_summary(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        let h = &self.cfg.haptics;
+        let state = if h.on_switch || h.on_edge { t.haptics_state_on } else { t.haptics_state_off };
+        let strength = if h.intensity == 0 { t.haptics_follow.to_string() } else { format!("{}%", h.intensity) };
+        let line = format!("{state} · {} {strength}", t.haptics_intensity);
+        let mut open = false;
+        let sub = self.follows_master();
+        section(ui, p, t.section_haptics, |ui| {
+            if sub {
+                self.follow_banner(ui, p, t);
+            }
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_SMALL), Sense::hover());
+            ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, &line, FontId::proportional(14.0), p.text);
+            let width = button_width(ui, t.haptics_open, ButtonKind::Plain);
+            let area = Rect::from_min_max(
+                Pos2::new(rect.right() - width, rect.center().y - 15.0),
+                Pos2::new(rect.right(), rect.center().y + 15.0),
+            );
+            ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
+                ui.add_enabled_ui(!sub, |ui| open = button(ui, p, t.haptics_open, ButtonKind::Plain).clicked());
+            });
+        });
+        if open {
+            self.stop_recording();
+            let position = ui
+                .ctx()
+                .input(|i| i.viewport().outer_rect)
+                .map(|r| r.center() - Vec2::from(HAPTICS_DIALOG_SIZE) / 2.0);
+            let current = self.cfg.haptics.clone();
+            self.haptics_dialog =
+                Some(HapticsDialog { draft: current.clone(), opened_with: current, position, size_guard: SizeKeeper::new(HAPTICS_DIALOG_SIZE, HAPTICS_DIALOG_SIZE) });
+        }
+    }
+    fn haptics_window(&mut self, ctx: &egui::Context, t: &Texts) {
+        let Some(dialog) = &self.haptics_dialog else { return };
+        let mut builder = egui::ViewportBuilder::default()
+            .with_title(t.haptics_dialog_title)
+            .with_inner_size(HAPTICS_DIALOG_SIZE)
+            .with_resizable(false)
+            .with_minimize_button(false)
+            .with_maximize_button(false);
+        if let Some(position) = dialog.position {
+            builder = builder.with_position(position);
+        }
+        ctx.show_viewport_immediate(haptics_viewport(), builder, |ui, _| self.haptics_dialog_ui(ui, t));
+    }
+    fn haptics_dialog_ui(&mut self, ui: &mut Ui, t: &Texts) {
+        let Some(mut dialog) = self.haptics_dialog.take() else { return };
+        keep_size(ui.ctx(), &mut dialog.size_guard);
+        let p = Palette::new(ui.visuals().dark_mode);
+        let closing = ui.ctx().input(|i| i.viewport().close_requested());
+        let (mut apply, mut ok, mut close) = (false, false, closing);
+        let panel = egui::Frame::new().fill(p.bg).inner_margin(Margin::symmetric(18, 14));
+        let d = &mut dialog.draft;
+        let error = self.error.clone();
+        let mut feel = None;
+        egui::CentralPanel::default().frame(panel).show(ui, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(ui.available_height() - 46.0).show(ui, |ui| {
+                // What haptics are, then each situation, in two cards with room between rows.
+                let mut on = d.on_switch || d.on_arrive || d.on_edge;
+                card(ui, p, |ui| {
+                    let before = on;
+                    dialog_row(ui, p, t.haptics_master, 48.0, |ui| {
+                        toggle(ui, p, t.haptics_master, &mut on);
+                    });
+                    if on != before {
+                        d.on_switch = on;
+                        d.on_arrive = on;
+                        d.on_edge = on;
+                    }
+                    divider(ui, p);
+                    ui.add_enabled_ui(on, |ui| {
+                        // 0 = as Logi Options+ sets it; otherwise the strength in percent.
+                        let choices: [(u8, &str); 5] = [(0, t.haptics_follow), (25, "25%"), (50, "50%"), (75, "75%"), (100, "100%")];
+                        dialog_row(ui, p, t.haptics_intensity, SITUATION_CONTROLS, |ui| {
+                            segmented(ui, p, "haptic-intensity", &mut d.intensity, &choices, SEG_SMALL);
+                        });
+                    });
+                });
+                ui.add_space(12.0);
+                card(ui, p, |ui| {
+                    ui.add_enabled_ui(on, |ui| {
+                        let pulses: Vec<(u8, &str)> =
+                            waveform::ALL.into_iter().zip(t.waveform_names).chain([(waveform::RANDOM, t.locate_random)]).collect();
+                        if situation_row(ui, p, t, t.haptics_switch, &mut d.on_switch, |ui| {
+                            combo(ui, "pulse-leave", &mut d.switch_waveform, &pulses);
+                        }) {
+                            feel = Some(HapticPreview::Pulse(d.switch_waveform));
+                        }
+                        divider(ui, p);
+                        if situation_row(ui, p, t, t.haptics_arrive, &mut d.on_arrive, |ui| {
+                            combo(ui, "pulse-arrive", &mut d.arrive_waveform, &pulses);
+                        }) {
+                            feel = Some(HapticPreview::Pulse(d.arrive_waveform));
+                        }
+                        divider(ui, p);
+                        let modes = [(true, t.haptics_rising), (false, t.haptics_even)];
+                        if situation_row(ui, p, t, t.haptics_edge, &mut d.on_edge, |ui| {
+                            segmented(ui, p, "edge-pattern", &mut d.progressive, &modes, SEG_SMALL);
+                        }) {
+                            feel = Some(HapticPreview::Edge { rising: d.progressive });
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+                // Below the cards, wrapping to the window's width.
+                egui::Frame::new().inner_margin(Margin::symmetric(4, 0)).show(ui, |ui| hint(ui, p, t.haptics_hint));
+                if let Some(err) = &error {
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(err).color(p.red));
+                }
+            });
+            ui.add_space(10.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                close |= button(ui, p, t.close, ButtonKind::Plain).clicked();
+                ok = button(ui, p, t.ok, ButtonKind::Primary).clicked();
+                apply = button(ui, p, t.apply, ButtonKind::Plain).clicked();
+            });
+        });
+        if let Some(what) = feel {
+            shared::request_haptic_preview(what, dialog.draft.intensity);
+        }
+        if close {
+            // Back to how it was when the window opened, undoing an Apply too.
+            if self.cfg.haptics != dialog.opened_with {
+                let original = dialog.opened_with.clone();
+                self.apply(|c| c.haptics = original);
+            }
+            return;
+        }
+        if apply || ok {
+            let chosen = dialog.draft.clone();
+            self.apply(|c| c.haptics = chosen);
+            if ok && self.error.is_none() {
+                return;
+            }
+        }
+        self.haptics_dialog = Some(dialog);
+    }
+}
+
+struct HapticsDialog {
+    draft: Haptics,
+    /// What Close goes back to, even after an Apply.
+    opened_with: Haptics,
+    /// Top left of the window, centred on the main window when opened.
+    position: Option<Pos2>,
+    size_guard: SizeKeeper,
+}
+
+const HAPTICS_DIALOG_SIZE: [f32; 2] = [620.0, 440.0];
+
+
+
+fn haptics_viewport() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("haptics-settings")
+}
+
+
+const SHORTCUTS_TAB: u16 = 0xFFFF;
+const EDGES_TAB: u16 = 0xFFFE;
+
+fn device_subtitle(d: &DeviceInfo, t: &Texts) -> String {
+    let kind = match d.kind.as_str() {
+        "mouse" => t.kind_mouse,
+        "keyboard" => t.kind_keyboard,
+        _ => t.kind_other,
+    };
+    format!("{kind} · {}", d.key)
+}
+fn title_row(ui: &mut Ui, p: Palette, label: &str, note: Option<&str>) {
+    let h = if note.is_some() { 50.0 } else { 40.0 };
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
+    let painter = ui.painter();
+    let left = Pos2::new(rect.left(), rect.center().y);
+    match note {
+        Some(note) => {
+            painter.text(left - Vec2::new(0.0, 1.0), Align2::LEFT_BOTTOM, label, FontId::proportional(14.5), p.text);
+            painter.text(left + Vec2::new(0.0, 3.0), Align2::LEFT_TOP, note, FontId::proportional(12.5), p.amber);
+        }
+        None => {
+            painter.text(left, Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
+        }
+    }
+}
+fn dialog_row(ui: &mut Ui, p: Palette, label: &str, width: f32, control: impl FnOnce(&mut Ui)) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), DIALOG_ROW), Sense::hover());
+    ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
+    let area = Rect::from_min_max(
+        Pos2::new(rect.right() - width, rect.center().y - 15.0),
+        Pos2::new(rect.right(), rect.center().y + 15.0),
+    );
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), control);
+    });
+}
+#[derive(Clone, Copy, PartialEq)]
+enum Mark { Radio, Check }
+fn device_choice_row(ui: &mut Ui, p: Palette, mark: Mark, selected: bool, row: &Row) -> Response {
     let h = if row.subtitle.is_some() { 46.0 } else { 38.0 };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -2713,55 +3506,65 @@ fn choice_row(ui: &mut Ui, p: Palette, mark: Mark, selected: bool, row: &Row) ->
     }
     resp
 }
-
-#[derive(Clone, Copy, PartialEq)]
-enum ButtonKind {
-    Plain,
-    Primary,
-    Danger,
-    DangerFilled,
+fn away_badge<'a>(d: &DeviceInfo, t: &'a Texts, p: Palette) -> Option<(&'a str, Color32)> {
+    (!d.online).then_some((t.away, p.amber))
 }
-
-fn button_font(kind: ButtonKind) -> FontId {
-    if matches!(kind, ButtonKind::DangerFilled | ButtonKind::Primary) { bold(14.0) } else { FontId::proportional(14.0) }
+fn situation_row(ui: &mut Ui, p: Palette, t: &Texts, label: &str, on: &mut bool, control: impl FnOnce(&mut Ui)) -> bool {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), DIALOG_ROW), Sense::hover());
+    ui.painter().text(Pos2::new(rect.left(), rect.center().y), Align2::LEFT_CENTER, label, FontId::proportional(14.5), p.text);
+    let area = Rect::from_min_max(
+        Pos2::new(rect.right() - SITUATION_CONTROLS, rect.center().y - 15.0),
+        Pos2::new(rect.right(), rect.center().y + 15.0),
+    );
+    let mut pressed = false;
+    ui.new_child(UiBuilder::new().max_rect(area)).scope(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            toggle(ui, p, label, on);
+            let enabled = *on;
+            ui.add_enabled_ui(enabled, |ui| {
+                pressed = button(ui, p, t.haptics_feel, ButtonKind::Plain).clicked();
+                control(ui);
+            });
+        });
+    });
+    pressed
 }
-
-fn button_width(ui: &Ui, label: &str, kind: ButtonKind) -> f32 {
-    let text = ui.painter().layout_no_wrap(label.to_string(), button_font(kind), Color32::WHITE).size().x;
-    (text + 28.0).max(BUTTON_MIN_WIDTH)
-}
-
-fn button(ui: &mut Ui, p: Palette, label: &str, kind: ButtonKind) -> Response {
-    let font = button_font(kind);
-    let size = Vec2::new(button_width(ui, label, kind), CONTROL_HEIGHT);
-    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+fn toggle(ui: &mut Ui, p: Palette, label: &str, on: &mut bool) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(40.0, 24.0), Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
-    let hovered = resp.hovered();
-    let (fill, stroke, color) = match kind {
-        ButtonKind::Plain => (if hovered { p.hover } else { p.card }, p.track, p.text),
-        ButtonKind::Primary => (if hovered { p.accent.gamma_multiply(0.85) } else { p.accent }, p.accent, Color32::WHITE),
-        ButtonKind::Danger => (if hovered { p.red.gamma_multiply(0.10) } else { p.card }, p.red.gamma_multiply(0.7), p.red),
-        ButtonKind::DangerFilled => (if hovered { p.red.gamma_multiply(0.85) } else { p.red }, p.red, Color32::WHITE),
-    };
-    let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(9), fill);
-    painter.rect_stroke(rect, 9, Stroke::new(1.0, stroke), StrokeKind::Inside);
-    painter.text(rect.center(), Align2::CENTER_CENTER, label, font, color);
-    resp
-}
-
-/// A shortcut as stored in the settings ("ctrl+alt+1"), or None for keys that make no
-/// good shortcut: a number, letter or F key, with ⌃/⌥/⌘ (Ctrl/Alt) unless it is an F key.
-fn shortcut_text(key: egui::Key, m: egui::Modifiers) -> Option<String> {
-    let name = key.name();
-    let f_key = name.len() > 1 && name.starts_with('F') && name[1..].parse::<u8>().is_ok();
-    let plain = name.len() == 1 && name.chars().all(|c| c.is_ascii_alphanumeric());
-    if !(f_key || plain) || (!f_key && !(m.ctrl || m.alt || m.mac_cmd)) {
-        return None;
+    resp.widget_info(|| WidgetInfo::selected(Role::Switch, true, *on, label));
+    if resp.clicked() {
+        *on = !*on;
     }
-    let mods = [(m.ctrl, "ctrl"), (m.alt, "alt"), (m.shift, "shift"), (m.mac_cmd, "super")];
-    let mut parts: Vec<&str> = mods.iter().filter(|x| x.0).map(|x| x.1).collect();
-    parts.push(name);
-    Some(parts.join("+").to_lowercase())
+    let how_on = ui.ctx().animate_bool_responsive(resp.id, *on);
+    let painter = ui.painter();
+    painter.rect_filled(rect, 12, p.track.lerp_to_gamma(p.accent, how_on));
+    let x = egui::lerp(rect.left() + 12.0..=rect.right() - 12.0, how_on);
+    painter.circle_filled(Pos2::new(x, rect.center().y), 9.5, Color32::WHITE);
+    resp.clicked()
+}
+const SITUATION_CONTROLS: f32 = 360.0;
+const DIALOG_ROW: f32 = 50.0;
+
+impl SettingsApp {
+    fn edge_confirm_window(&mut self, ctx: &egui::Context, t: &Texts, p: Palette) {
+        if !self.edge_confirm { return; }
+        egui::Window::new(t.edges_title).collapsible(false).resizable(false).show(ctx, |ui| {
+            ui.label(t.edges_confirm);
+            ui.horizontal(|ui| {
+                if button(ui, p, t.turn_on, ButtonKind::Primary).clicked() {
+                    self.apply(|c| c.edges.on = true);
+                    self.edge_confirm = false;
+                }
+                if button(ui, p, t.cancel, ButtonKind::Plain).clicked() { self.edge_confirm = false; }
+            });
+        });
+    }
+    fn easy_switch_hint(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
+        ui.label(RichText::new(t.easy_switch_hint).size(12.5).color(p.amber));
+        if self.cfg.enabled && button(ui, p, t.easy_switch_off, ButtonKind::Plain).clicked() {
+            self.apply(|c| c.enabled = false);
+        }
+    }
 }

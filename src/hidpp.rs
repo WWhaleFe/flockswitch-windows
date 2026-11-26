@@ -22,7 +22,7 @@ const LONG_LEN: usize = 20;
 const BACKLOG_KEPT: usize = 32;
 
 /// USB receivers (devices live in slots 1..=6). Anything else exposing the HID++
-/// collection — e.g. a mouse on a USB cable — is addressed directly at index 0xFF.
+/// collection - e.g. a mouse on a USB cable - is addressed directly at index 0xFF.
 const RECEIVER_PIDS: &[u16] = &[
     0xC548, // Bolt
     0xC52B, 0xC532, // Unifying
@@ -62,7 +62,7 @@ pub enum Reply {
     /// The device or receiver answered with an error (HID++ 1.0 0x8F or HID++ 2.0 0xFF),
     /// e.g. because the device is not linked to this receiver right now.
     Error,
-    /// No answer within the timeout — usually the device is asleep or on another host.
+    /// No answer within the timeout - usually the device is asleep or on another host.
     Timeout,
 }
 

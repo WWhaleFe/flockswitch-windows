@@ -856,6 +856,8 @@ fn button_by_name(name: &str) -> Option<u16> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    #[serde(default)]
+    pub network: flock_net::NetConfig,
     /// Master switch. When false the buttons are left alone.
     pub enabled: bool,
     /// Which device carries the trigger buttons: "auto" (first mouse that has them),
@@ -920,6 +922,7 @@ impl Hotkeys {
 impl Default for Config {
     fn default() -> Self {
         Config {
+            network: flock_net::NetConfig::default(),
             enabled: true,
             trigger_device: "auto".into(),
             follow: vec!["all".into()],
@@ -962,25 +965,38 @@ struct Legacy {
 
 impl Config {
     pub fn path() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("flockswitch")
-            .join("config.toml")
+        Self::base_dir().join("flockswitch").join("config.toml")
     }
 
-    /// The app was called "hostswitch" before 0.3.0. Moves that settings folder (config,
-    /// remembered devices, saved button state) to the new name once, if present.
-    pub fn migrate_old_name() {
-        let Some(base) = dirs::config_dir() else { return };
-        let (old, new) = (base.join("hostswitch"), base.join("flockswitch"));
-        if old.is_dir() && !new.exists() {
-            let _ = std::fs::rename(&old, &new);
+    /// flockswitch2 is a program of its own: everything it keeps (settings, log, network
+    /// identity) lives under its own folder, apart from flockswitch.
+    pub fn base_dir() -> PathBuf {
+        dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("flockswitch2")
+    }
+
+    /// On first run flockswitch2 starts from a copy of flockswitch's settings, if any
+    /// (only read; flockswitch's files are left alone).
+    fn copy_1x_settings(path: &std::path::Path) {
+        if path.exists() {
+            return;
+        }
+        let Some(old) = dirs::config_dir().map(|b| b.join("flockswitch").join("config.toml")) else { return };
+        if old.is_file() {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::copy(&old, path);
         }
     }
+
+    /// flockswitch moved a "hostswitch" settings folder here; flockswitch2 has its own
+    /// folder and never touches the other program's, so there is nothing to move.
+    pub fn migrate_old_name() {}
 
     /// Loads the config, writing the defaults on first run so users have a file to edit.
     pub fn load_or_create() -> Result<Config> {
         let path = Self::path();
+        Self::copy_1x_settings(&path);
         if !path.exists() {
             let cfg = Config::default();
             cfg.save()?;
@@ -1111,6 +1127,12 @@ impl Config {
     }
 
     fn set_unchecked(&mut self, key: &str, value: &str) -> Result<()> {
+        match key {
+            "network.on" => { let previous = self.clone(); self.network.on = value.parse().context("network.on must be true or false")?; self.resolve_edge_owner(&previous); return Ok(()); }
+            "network.name" => { self.network.name = value.into(); return Ok(()); }
+            "network.port" => { self.network.port = value.parse().context("network.port must be between 1 and 65535")?; return Ok(()); }
+            _ => {}
+        }
         if key == "hotkeys" || key == "hotkeys.on" {
             self.hotkeys.on = value.parse().context("hotkeys must be true or false")?;
             return Ok(());
@@ -1280,6 +1302,9 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
+        anyhow::ensure!(self.network.port != 0, "network.port must be between 1 and 65535");
+        anyhow::ensure!(self.network.peers.iter().all(|p| p.logitech_channel <= 3), "network channel must be between 0 and 3");
+        anyhow::ensure!(["capslock", "off"].contains(&self.network.lang1_on_mac.as_str()), "network.lang1_on_mac must be capslock or off");
         for cid in BUTTONS {
             let b = self.button(cid);
             let name = button_name(cid);
@@ -1931,5 +1956,78 @@ mod tests {
         assert_eq!(back.hotkeys, c.hotkeys);
         // Settings from before shortcuts existed get them off.
         assert!(!Config::parse("enabled = true").unwrap().hotkeys.on);
+    }
+}
+
+#[cfg(test)]
+mod network_tests {
+    use super::*;
+    #[test]
+    fn legacy_config_has_network_off() {
+        let config = Config::parse("enabled = true\n[edges]\non = true\nright = 2\n").unwrap();
+        assert!(!config.network.on);
+        assert_eq!(config.network.port, 47160);
+        assert_eq!(config.edges.right, 2);
+        config.validate().unwrap();
+        let loaded = Config::parse(&toml::to_string(&config).unwrap()).unwrap();
+        assert_eq!(loaded.network, config.network);
+    }
+    #[test]
+    fn network_config_without_new_fields_loads() {
+        let config = Config::parse("[network]\non = true\nname = \"Old\"\nport = 47160\n").unwrap();
+        let n = &config.network;
+        assert!(n.on);
+        assert_eq!(n.role, flock_net::Role::Master);
+        assert!(!n.notice_accepted);
+        assert!(n.share_clipboard);
+        assert_eq!(n.clipboard_limit_mb, 100);
+        assert_eq!(n.cross_delay_ms, 0);
+    }
+    #[test]
+    fn network_port_validation() {
+        let mut config = Config::default();
+        for port in ["0", "65536", "-1"] { assert!(config.set("network.port", port).is_err()); }
+        config.set("network.port", "65535").unwrap();
+        config.set("network.on", "true").unwrap();
+        config.set("network.name", "My PC").unwrap();
+        assert!(config.network.on);
+        assert_eq!(config.network.name, "My PC");
+    }
+}
+
+impl Config {
+    pub fn resolve_edge_owner(&mut self, previous: &Config) {
+        if self.network.on && !previous.network.on { self.edges.on = false; }
+    }
+    pub fn network_edges_allowed(&self) -> bool { self.network.on && !self.edges.on }
+    pub fn logitech_edges_allowed(&self) -> bool {
+        self.enabled && self.edges.on && self.edges.any()
+    }
+}
+#[cfg(test)]
+mod owner_tests {
+    use super::*;
+    #[test]
+    fn sharing_takes_edges_but_logitech_can_pause_crossing() {
+        let before = Config::default();
+        let mut c = before.clone(); c.edges.on = true; c.edges.right = 2;
+        assert!(c.logitech_edges_allowed());
+        let previous = c.clone(); c.network.on = true; c.resolve_edge_owner(&previous);
+        assert!(!c.edges.on && c.network_edges_allowed());
+        let previous = c.clone(); c.edges.on = true; c.resolve_edge_owner(&previous);
+        assert!(c.network.on && !c.network_edges_allowed() && c.logitech_edges_allowed());
+        c.edges.on = false; assert!(c.network_edges_allowed());
+    }
+    #[test]
+    fn test2_config_gets_logitech_defaults() {
+        let c = Config::parse(r#"language = "ko"
+[network]
+on = true
+[edges]
+anim_style = "bar"
+"#).unwrap();
+        assert_eq!(c.buttons, Config::default().buttons);
+        assert_eq!(c.edges.anim_style, EdgeAnimStyle::Bar);
+        c.validate().unwrap();
     }
 }

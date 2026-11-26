@@ -49,7 +49,7 @@ pub fn folder() -> PathBuf {
     dirs::document_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Documents")))
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("flockswitch")
+        .join("flockswitch2")
 }
 
 /// A backup found in the folder.

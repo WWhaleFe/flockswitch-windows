@@ -26,10 +26,10 @@ fn main() {
     let mut res = winresource::WindowsResource::new();
     res.set_icon(ico.to_str().unwrap());
     // FileVersion / ProductVersion come from CARGO_PKG_VERSION automatically.
-    res.set("ProductName", "flockswitch");
-    res.set("FileDescription", "flockswitch - move mouse and keyboard to another computer together");
-    res.set("OriginalFilename", "flockswitch.exe");
-    res.set("InternalName", "flockswitch");
+    res.set("ProductName", "flockswitch2");
+    res.set("FileDescription", "flockswitch2 - move mouse and keyboard to another computer together");
+    res.set("OriginalFilename", "flockswitch2.exe");
+    res.set("InternalName", "flockswitch2");
     res.set("LegalCopyright", "Copyright (c) 2026 WWhaleFe. MIT License.");
     res.set_manifest(MANIFEST);
     res.compile().expect("compiling Windows resources");
@@ -42,7 +42,7 @@ const WINDOW_ICON: u32 = 96;
 /// Modern common controls (menus look native) and per-monitor DPI awareness (sharp icon).
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="flockswitch" version="1.0.0.0"/>
+  <assemblyIdentity type="win32" name="flockswitch2" version="1.0.0.0"/>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
