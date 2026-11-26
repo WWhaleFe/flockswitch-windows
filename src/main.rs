@@ -24,7 +24,6 @@ mod store;
 mod tray;
 mod update;
 mod wake;
-mod window_size;
 
 use anyhow::{bail, Result};
 use config::Config;
@@ -167,7 +166,7 @@ fn real_main(args: &[String]) -> Result<()> {
         "run" => run_headless(),
         "settings" => {
             // One settings window at a time. Opening it again knocks on the open
-            // window's port (nothing is sent), which brings that window to the front.
+            // window's port (one byte only for `update`), which brings that window to the front.
             let addr = std::net::SocketAddr::from(([127, 0, 0, 1], INSTANCE_PORT + 1));
             let fallback = std::env::var(settings_ui::RENDERER_ENV).is_ok();
             // A fallback relaunch waits for the failed window's process to let go.
@@ -181,8 +180,13 @@ fn real_main(args: &[String]) -> Result<()> {
             });
             let Some(lock) = lock else {
                 let reason = bind_error.map(|e| format!("{e} ({:?})", e.kind())).unwrap_or_default();
-                if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)).is_ok() {
+                if let Ok(mut knock) = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)) {
                     log::info!("settings window already open ({addr}: {reason}); bringing it to the front");
+                    // `settings update` also asks the open window for the General page.
+                    if args.get(1).map(String::as_str) == Some("update") {
+                        use std::io::Write;
+                        let _ = knock.write_all(&[settings_ui::KNOCK_GENERAL]);
+                    }
                     return Ok(());
                 }
                 // Nobody answers: the port is reserved (Hyper-V, WSL and Docker reserve

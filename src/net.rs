@@ -6,6 +6,7 @@ use crate::{
 };
 use flock_net::{keymap, InputEvent, MouseButton, NetConfig, Os, Platform, Rect, Role, Service, Side};
 use flockswitch::key_rules::{echoed, Outbox, Rules};
+use flockswitch::held_keys::{release_plan, KeyStep};
 use flockswitch::idle::{CONFIG_POLL, NETWORK_POLL, WORKER_STACK};
 use serde_json::{json, Value};
 use std::{
@@ -523,6 +524,37 @@ unsafe extern "system" fn keyboard_hook(code: i32, message: WPARAM, data: LPARAM
         CallNextHookEx(null_mut(), code, message, data)
     }
 }
+fn send_release_plan(plan: &[KeyStep]) {
+    let key = |vk: u16, up: bool| {
+        let extended = matches!(vk, VK_RCONTROL | VK_RMENU | VK_LWIN | VK_RWIN);
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: if up { KEYEVENTF_KEYUP } else { 0 } | if extended { KEYEVENTF_EXTENDEDKEY } else { 0 },
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    };
+    let mut inputs = Vec::new();
+    for step in plan {
+        match *step {
+            KeyStep::Up(vk) => inputs.push(key(vk, true)),
+            KeyStep::Tap(vk) => {
+                inputs.push(key(vk, false));
+                inputs.push(key(vk, true));
+            }
+        }
+    }
+    let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        log::debug!("releasing held modifiers: SendInput {sent}/{}", inputs.len());
+    }
+}
 fn restore_cursors() {
     unsafe {
         SystemParametersInfoW(SPI_SETCURSORS, 0, null_mut(), 0);
@@ -618,6 +650,7 @@ impl WindowsPlatform {
                                 crate::edge::platform::place(park.0 as f64, park.1 as f64);
                                 hide_cursors();
                                 // Include modifiers already held when the cursor crossed.
+                                let mut held = Vec::new();
                                 for (vk, usage) in [
                                     (VK_LCONTROL, 0xe0),
                                     (VK_LSHIFT, 0xe1),
@@ -630,9 +663,19 @@ impl WindowsPlatform {
                                 ] {
                                     if GetAsyncKeyState(vk as i32) < 0 {
                                         let _ = sink.send(InputEvent::Key { usage, down: true });
+                                        held.push(vk);
                                     }
                                 }
                                 CAPTURE.with_borrow_mut(|c| *c = Some(Capture { sink, park }));
+                                // The hook swallows their key-up from now on, so release them
+                                // here. SendInput waits for this thread's own hook, so it runs on
+                                // another thread; injected events pass the hook.
+                                let plan = release_plan(&held);
+                                if !plan.is_empty() {
+                                    let _ = thread::Builder::new()
+                                        .name("flock-release-held".into())
+                                        .spawn(move || send_release_plan(&plan));
+                                }
                                 let _ = ack.send(());
                             }
                             Command::Stop(ack) => {

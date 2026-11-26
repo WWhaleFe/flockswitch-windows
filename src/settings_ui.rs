@@ -14,14 +14,14 @@ use crate::i18n::{texts, Texts};
 use crate::shared::{self, DeviceInfo, HapticPreview, StatusFile};
 use crate::net::NetState;
 use crate::update::{self, UpdateState};
-use crate::window_size::SizeKeeper;
+use flockswitch::window_size::SizeKeeper;
 use anyhow::{anyhow, Result};
 use auto_launch::AutoLaunch;
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontFamily, FontId, Margin, Pos2, Rect, Response, RichText, Role,
     Sense, Shadow, Shape, Stroke, StrokeKind, Ui, UiBuilder, Vec2, WidgetInfo,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -45,18 +45,78 @@ mod connect;
 mod keys;
 mod logitech;
 
+/// The window's size, decided once when it is created: `WINDOW_SIZE`, capped to the work
+/// area of the monitor it opens on so it fits a small or heavily scaled screen. It never
+/// changes afterwards.
+fn open_size() -> [f32; 2] {
+    static SIZE: std::sync::OnceLock<[f32; 2]> = std::sync::OnceLock::new();
+    *SIZE.get_or_init(|| {
+        #[cfg(windows)]
+        if let Some(size) = work_area_fit() {
+            return size;
+        }
+        WINDOW_SIZE
+    })
+}
+
+/// `WINDOW_SIZE` fitted to the work area of the monitor under the cursor and of the primary
+/// one (the window opens on either), whichever is smaller.
+#[cfg(windows)]
+fn work_area_fit() -> Option<[f32; 2]> {
+    use windows_sys::Win32::{
+        Foundation::POINT,
+        Graphics::Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY},
+        UI::{HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI}, WindowsAndMessaging::GetCursorPos},
+    };
+    let mut cursor = POINT { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut cursor) } == 0 {
+        cursor = POINT { x: 0, y: 0 };
+    }
+    let mut size = WINDOW_SIZE;
+    let mut any = false;
+    for point in [cursor, POINT { x: 0, y: 0 }] {
+        let monitor = unsafe { MonitorFromPoint(point, MONITOR_DEFAULTTOPRIMARY) };
+        if monitor.is_null() {
+            continue;
+        }
+        let mut info: MONITORINFO = unsafe { std::mem::zeroed() };
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
+        if unsafe { GetMonitorInfoW(monitor, &mut info) } == 0
+            || unsafe { GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) } != 0
+        {
+            continue;
+        }
+        let work = info.rcWork;
+        let fit = flockswitch::window_size::fit_to_work_area(
+            WINDOW_SIZE,
+            [work.right - work.left, work.bottom - work.top],
+            dpi_x as f32 / 96.0,
+        );
+        size = [size[0].min(fit[0]), size[1].min(fit[1])];
+        any = true;
+    }
+    any.then_some(size)
+}
+
 /// The window: one fixed size, no resizing, no maximize button.
 fn window_builder(title: &str, icon: egui::IconData) -> egui::ViewportBuilder {
+    let size = open_size();
     egui::ViewportBuilder::default()
         .with_title(title)
         .with_icon(icon)
-        .with_inner_size(WINDOW_SIZE)
-        .with_min_inner_size(WINDOW_SIZE)
-        .with_max_inner_size(WINDOW_SIZE)
+        .with_inner_size(size)
+        .with_min_inner_size(size)
+        .with_max_inner_size(size)
         .with_resizable(false)
         .with_maximize_button(false)
         .with_active(true)
 }
+
+/// Values of `SettingsApp::raise`, and the byte a second process sends for the General page.
+const RAISE: u8 = 1;
+const RAISE_GENERAL: u8 = 2;
+pub const KNOCK_GENERAL: u8 = b'u';
 
 /// Opens the window. `lock` keeps a second window from opening; a connection to it
 /// means "Settings…" was chosen again, so the window comes back to the front.
@@ -84,11 +144,18 @@ pub fn run(lock: std::net::TcpListener, show_update: bool) -> Result<()> {
             crate::overlay::set_ready();
             install_fonts(&cc.egui_ctx);
             install_style(&cc.egui_ctx);
-            let raise = Arc::new(AtomicBool::new(false));
+            let raise = Arc::new(AtomicU8::new(0));
             let (ctx, flag) = (cc.egui_ctx.clone(), raise.clone());
             std::thread::spawn(move || {
-                for _ in lock.incoming() {
-                    flag.store(true, Ordering::Relaxed);
+                for stream in lock.incoming() {
+                    // A second process started for the "new version" item sends one byte.
+                    let mut byte = [0u8; 1];
+                    let general = stream.is_ok_and(|mut s| {
+                        use std::io::Read;
+                        let _ = s.set_read_timeout(Some(Duration::from_millis(300)));
+                        s.read(&mut byte).is_ok_and(|n| n == 1 && byte[0] == KNOCK_GENERAL)
+                    });
+                    flag.store(if general { RAISE_GENERAL } else { RAISE }, Ordering::Relaxed);
                     ctx.request_repaint();
                 }
             });
@@ -507,7 +574,9 @@ struct SettingsApp {
     raise_frames: u8,
     /// Window title last set, to follow a language change.
     title: &'static str,
-    raise: Arc<AtomicBool>,
+    /// Set by a second `flockswitch settings` knocking on the port: `RAISE`, or
+    /// `RAISE_GENERAL` when it came from the "new version" menu item.
+    raise: Arc<AtomicU8>,
     icon: egui::TextureHandle,
     /// Set once a frame has reached the screen (see `watch_first_frame`).
     shown: Arc<AtomicBool>,
@@ -601,7 +670,7 @@ fn how_viewport() -> egui::ViewportId {
 }
 
 impl SettingsApp {
-    fn new(ctx: &egui::Context, raise: Arc<AtomicBool>, shown: Arc<AtomicBool>, show_update: bool) -> SettingsApp {
+    fn new(ctx: &egui::Context, raise: Arc<AtomicU8>, shown: Arc<AtomicBool>, show_update: bool) -> SettingsApp {
         let autostart = crate::tray::autostart();
         let autostart_on = autostart.as_ref().is_some_and(|a| a.is_enabled().unwrap_or(false));
         let image = egui::ColorImage::from_rgba_unmultiplied([ICON_SIDE as usize; 2], ICON_RGBA);
@@ -646,7 +715,7 @@ impl SettingsApp {
             window_handle: None,
             confirm_reset: false,
             color_draft: None,
-            window_size: SizeKeeper::new(WINDOW_SIZE, WINDOW_SIZE),
+            window_size: SizeKeeper::new(open_size(), open_size()),
             picker: None,
             manager: None,
             backup_note: None,
@@ -884,8 +953,12 @@ impl SettingsApp {
     /// Un-minimizes and focuses the window when it starts and whenever "Settings…" is
     /// chosen again. Repeated on the next frame: un-minimizing takes effect first.
     fn bring_to_front(&mut self, ctx: &egui::Context) {
-        if self.raise.swap(false, Ordering::Relaxed) {
+        let knock = self.raise.swap(0, Ordering::Relaxed);
+        if knock != 0 {
             self.raise_frames = 2;
+            if knock == RAISE_GENERAL {
+                self.page = Page::General;
+            }
         }
         if self.raise_frames == 0 {
             return;
@@ -1813,11 +1886,13 @@ fn color_swatch(ui: &mut Ui, p: Palette, [r, g, b]: [u8; 3], selected: bool) -> 
 /// This computer's private IPv4 addresses, from the network adapters.
 fn local_ips() -> Vec<String> {
     use windows_sys::Win32::NetworkManagement::IpHelper::{
-        GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
+        GetAdaptersAddresses, GAA_FLAG_INCLUDE_GATEWAYS, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
     };
     use windows_sys::Win32::Networking::WinSock::{AF_INET, SOCKADDR_IN};
     const IF_OPER_STATUS_UP: i32 = 1;
-    let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    const IF_TYPE_SOFTWARE_LOOPBACK: u32 = 24;
+    const IF_TYPE_TUNNEL: u32 = 131;
+    let flags = GAA_FLAG_INCLUDE_GATEWAYS | GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
     let mut len = 16 * 1024u32;
     let mut buffer: Vec<u64> = Vec::new();
     // The size can change between calls, so retry a few times.
@@ -1825,13 +1900,15 @@ fn local_ips() -> Vec<String> {
         buffer.resize((len as usize).div_ceil(8), 0);
         let result = unsafe { GetAdaptersAddresses(AF_INET as u32, flags, std::ptr::null(), buffer.as_mut_ptr().cast(), &mut len) };
         if result == 0 {
-            let mut ips = Vec::new();
+            // Adapters with a gateway (the ones that reach the network) come first.
+            let (mut routed, mut other) = (Vec::new(), Vec::new());
             let mut adapter = buffer.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
             // Safety: the list lives in `buffer`, which GetAdaptersAddresses filled and nothing else touches.
             unsafe {
                 while !adapter.is_null() {
                     let a = &*adapter;
-                    if a.OperStatus == IF_OPER_STATUS_UP {
+                    if a.OperStatus == IF_OPER_STATUS_UP && a.IfType != IF_TYPE_SOFTWARE_LOOPBACK && a.IfType != IF_TYPE_TUNNEL {
+                        let list = if a.FirstGatewayAddress.is_null() { &mut other } else { &mut routed };
                         let mut unicast = a.FirstUnicastAddress;
                         while !unicast.is_null() {
                             let u = &*unicast;
@@ -1840,7 +1917,7 @@ fn local_ips() -> Vec<String> {
                                 let v4 = &*sockaddr.cast::<SOCKADDR_IN>();
                                 let ip = std::net::Ipv4Addr::from(u32::from_be(v4.sin_addr.S_un.S_addr));
                                 if ip.is_private() {
-                                    ips.push(ip.to_string());
+                                    list.push(ip);
                                 }
                             }
                             unicast = u.Next;
@@ -1849,8 +1926,12 @@ fn local_ips() -> Vec<String> {
                     adapter = a.Next;
                 }
             }
-            ips.dedup();
-            return ips;
+            routed.sort();
+            routed.dedup();
+            other.sort();
+            other.dedup();
+            other.retain(|ip| !routed.contains(ip));
+            return routed.into_iter().chain(other).map(|ip| ip.to_string()).collect();
         }
         if result != 111 { break; } // ERROR_BUFFER_OVERFLOW: len holds the size needed
     }
@@ -3369,7 +3450,7 @@ mod tests {
     #[test]
     fn the_window_has_one_fixed_size() {
         let builder = window_builder("x", egui::IconData { rgba: vec![0; 4], width: 1, height: 1 });
-        let size = Vec2::from(WINDOW_SIZE);
+        let size = Vec2::from(open_size());
         assert_eq!(builder.inner_size, Some(size));
         // The smallest and the largest are the size itself, and it cannot be dragged.
         assert_eq!(builder.min_inner_size, Some(size));
@@ -3513,7 +3594,7 @@ mod tests {
         let ctx = egui::Context::default();
         install_fonts(&ctx);
         install_style(&ctx);
-        let mut app = SettingsApp::new(&ctx, Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)), false);
+        let mut app = SettingsApp::new(&ctx, Arc::new(AtomicU8::new(0)), Arc::new(AtomicBool::new(false)), false);
         let pages = [Page::Connect, Page::Cross, Page::Keys, Page::Clip, Page::This, Page::Buttons, Page::Hotkeys, Page::Edges, Page::Devices, Page::Effects, Page::General];
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::from(WINDOW_SIZE));
         let mut overlaps: Vec<String> = Vec::new();

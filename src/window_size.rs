@@ -17,6 +17,22 @@
 /// A size in points, [width, height].
 pub type Size = [f32; 2];
 
+/// Room left around a window opened on a small screen, in points: beside it, and above
+/// and below it (title bar, borders, taskbar edge).
+const FIT_MARGIN: Size = [24.0, 72.0];
+/// The window is never made smaller than this by `fit_to_work_area`.
+const FIT_FLOOR: Size = [600.0, 400.0];
+
+/// `want` (inner size, points) capped to a monitor work area of `work` physical pixels at
+/// `scale` pixels per point, less a small margin. Used once, when the window is created.
+pub fn fit_to_work_area(want: Size, work: [i32; 2], scale: f32) -> Size {
+    if scale <= 0.0 || work[0] <= 0 || work[1] <= 0 {
+        return want;
+    }
+    let room = [work[0] as f32 / scale - FIT_MARGIN[0], work[1] as f32 / scale - FIT_MARGIN[1]];
+    [0, 1].map(|i| want[i].min(room[i].max(FIT_FLOOR[i])))
+}
+
 /// Frames in which to ask again for the size, while the window settles.
 const TRIES: u8 = 12;
 /// Closer than this (points) is the size asked for.
@@ -168,5 +184,21 @@ mod tests {
         assert_eq!(k.step(1.75, [620.0, 440.0]), Some(Fix { limits: true, size: [620.0, 440.0] }));
         assert_eq!(k.step(1.75, [620.0, 440.0]), None);
         assert_eq!(k.step(1.75, [700.0, 500.0]), Some(Fix { limits: false, size: [620.0, 440.0] }));
+    }
+
+    #[test]
+    fn fit_caps_to_small_work_areas_and_keeps_big_ones() {
+        let want = [1040.0, 660.0];
+        // 1920x1080 at 150%: work area 1920x1040 px.
+        assert_eq!(fit_to_work_area(want, [1920, 1040], 1.5), [1040.0, 1040.0 / 1.5 - 72.0]);
+        // 1366x768 at 125%: work area 1366x728 px.
+        let fit = fit_to_work_area(want, [1366, 728], 1.25);
+        assert_eq!(fit, [1040.0, 728.0 / 1.25 - 72.0]);
+        // A big screen leaves the size alone; nonsense input too.
+        assert_eq!(fit_to_work_area(want, [2560, 1400], 1.0), want);
+        assert_eq!(fit_to_work_area(want, [0, 0], 1.0), want);
+        assert_eq!(fit_to_work_area(want, [800, 600], 1.0), [776.0, 528.0]);
+        // A tiny screen stops at the floor.
+        assert_eq!(fit_to_work_area(want, [500, 400], 1.0), [600.0, 400.0]);
     }
 }

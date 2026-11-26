@@ -31,7 +31,9 @@ fn main() {
     res.set("OriginalFilename", "flockswitch.exe");
     res.set("InternalName", "flockswitch");
     res.set("LegalCopyright", "Copyright (c) 2026 WWhaleFe. MIT License.");
-    res.set_manifest(MANIFEST);
+    // Assembly version from Cargo.toml: "2.1.0" becomes "2.1.0.0".
+    let version = format!("{}.0", std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION"));
+    res.set_manifest(&MANIFEST.replace("{VERSION}", &version));
     res.compile().expect("compiling Windows resources");
 }
 
@@ -42,7 +44,7 @@ const WINDOW_ICON: u32 = 96;
 /// Modern common controls (menus look native) and per-monitor DPI awareness (sharp icon).
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="flockswitch" version="2.0.0.0"/>
+  <assemblyIdentity type="win32" name="flockswitch" version="{VERSION}"/>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"

@@ -25,9 +25,16 @@ pub fn cursor_wait(edges: bool, shake: bool) -> Option<Duration> {
     }
 }
 
+/// How long an update may stay in the installing state before it counts as failed.
+pub const INSTALL_LIMIT: Duration = Duration::from_secs(30 * 60);
+
 /// Paused update checks have no timer; configuration and installation changes wake them.
-pub fn update_wait(enabled: bool, installing: bool, remaining: Duration) -> Option<Duration> {
-    (enabled && !installing).then_some(remaining)
+/// While an install runs (`installing_for` is how long), the wait ends at its deadline.
+pub fn update_wait(enabled: bool, installing_for: Option<Duration>, remaining: Duration) -> Option<Duration> {
+    match installing_for {
+        Some(elapsed) if elapsed < INSTALL_LIMIT => Some(INSTALL_LIMIT - elapsed),
+        _ => enabled.then_some(remaining),
+    }
 }
 
 /// A generation prevents a notification between checking work and waiting being lost.
@@ -148,14 +155,19 @@ mod tests {
     #[test]
     fn updates_wait_for_the_deadline_or_a_setting_change() {
         let day = Duration::from_secs(24 * 60 * 60);
-        assert_eq!(update_wait(true, false, day), Some(day));
+        assert_eq!(update_wait(true, None, day), Some(day));
         assert_eq!(
-            update_wait(true, false, Duration::ZERO),
+            update_wait(true, None, Duration::ZERO),
             Some(Duration::ZERO)
         );
-        assert_eq!(update_wait(false, false, day), None);
-        assert_eq!(update_wait(true, true, Duration::ZERO), None);
-        assert_eq!(update_wait(false, true, Duration::ZERO), None);
+        assert_eq!(update_wait(false, None, day), None);
+        // An install in progress waits for its deadline, then normal checks resume.
+        let ten = Some(Duration::from_secs(600));
+        let left = Some(INSTALL_LIMIT - Duration::from_secs(600));
+        assert_eq!(update_wait(true, ten, Duration::ZERO), left);
+        assert_eq!(update_wait(false, ten, Duration::ZERO), left);
+        assert_eq!(update_wait(true, Some(INSTALL_LIMIT), day), Some(day));
+        assert_eq!(update_wait(false, Some(INSTALL_LIMIT), day), None);
     }
 
     #[test]

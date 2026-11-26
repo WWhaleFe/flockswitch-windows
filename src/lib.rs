@@ -3,3 +3,5 @@ pub mod key_rules;
 pub mod peers;
 pub mod store_dialog;
 pub mod idle;
+pub mod held_keys;
+pub mod window_size;
