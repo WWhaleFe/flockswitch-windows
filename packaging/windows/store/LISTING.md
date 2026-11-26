@@ -1,9 +1,9 @@
-# Microsoft Store 목록 (2.0.0)
+# Microsoft Store 목록 (2.1.0)
 
-Partner Center에 그대로 붙여 넣는 문구와 스크린샷 순서입니다. 1.7.0 개편안을 2.0 기준으로 전부 바꿨습니다.
+Partner Center에 그대로 붙여 넣는 문구와 스크린샷 순서입니다. 2.0.0 목록을 2.1.0 기준으로 업데이트했습니다.
 
-- **핵심 변화:** 1.x는 "Logitech 장치를 버튼 하나로 함께 전환"이 전부였습니다. 2.0은 **로컬 네트워크로 마우스·키보드·클립보드 공유**가 첫째 기능이고, Logitech 전환은 둘째 기능입니다. 설명도 이 순서로 씁니다.
-- **스크린샷:** `store-shots/ko/1~6.png`, `store-shots/en/1~6.png` (1920×1080, 2.0.0 실제 설정 창, 이 저장소의 GitHub Windows 러너에서 촬영).
+- **핵심 변화:** 1.x는 "Logitech 장치를 버튼 하나로 함께 전환"이 전부였습니다. 2.0부터는 **로컬 네트워크로 마우스·키보드·클립보드 공유**가 첫째 기능이고, Logitech 전환은 둘째 기능입니다. 2.1은 사이드바 설정 창(크기 고정), 연결과 배치 페이지의 역할 선택과 5×3 배치 지도(서브끼리 직접 넘기기), 서브끼리 클립보드 공유, 키보드 페이지의 운영체제 쌍별 'OS 전환 시' 규칙, 연결 다시 찾기와 절전·잠금 해제 뒤 자동 재연결, 컴퓨터별 입력 보내기 스위치, Store를 통한 지금 업데이트, 대기 중 CPU·메모리 절감을 더했습니다.
+- **스크린샷:** `store-shots/ko/1~6.png`, `store-shots/en/1~6.png` (1920×1080, 2.1의 새 사이드바 설정 창에서 다시 촬영 예정).
 - **글자 수 한도:** 설명 10,000자, 이번 버전의 새로운 기능 1,500자, 제품 기능 20개×200자, 짧은 설명 1,000자(게임 외에는 표시되지 않는 곳이 많아 짧게), 검색어 7개.
 
 ## 1. 한국어 (ko-KR)
@@ -13,19 +13,20 @@ Partner Center에 그대로 붙여 넣는 문구와 스크린샷 순서입니다
 ```
 flockswitch는 책상 위 여러 컴퓨터를 마우스·키보드 한 벌로 쓰게 해 주는 무료 오픈소스 앱입니다. 2.0부터 두 가지 방식을 함께 씁니다.
 
-■ 네트워크 공유 (2.0 새 기능)
+■ 네트워크 공유
 같은 로컬 네트워크에 있는 내 Windows PC와 Mac 사이에서 마우스·키보드·클립보드를 공유합니다. 커서를 화면 가장자리로 밀면 옆 컴퓨터 화면으로 넘어가고, 그 컴퓨터를 이 PC의 마우스·키보드로 바로 조작합니다. 마우스·키보드 브랜드는 상관없습니다.
 
-• 마스터 한 대에 서브를 최대 3대까지 연결합니다. 서브는 마스터의 화면 배치와 효과 설정을 따릅니다.
-• 근처 컴퓨터를 자동으로 찾아 줍니다(mDNS). 찾지 못하면 IP 주소로 추가합니다.
+• 연결과 배치 페이지에서 이 컴퓨터의 역할(마스터·서브)을 고릅니다. 마스터 한 대에 서브를 최대 3대까지 연결하며, 서브는 마스터의 화면 배치와 효과 설정을 따릅니다.
+• 근처 컴퓨터를 자동으로 찾아 줍니다(mDNS). 찾지 못하면 IP 주소로 추가합니다. 연결 다시 찾기 버튼으로 바로 다시 연결할 수 있고, 절전 모드에서 깨어나거나 잠금을 풀면 자동으로 다시 연결합니다.
 • 짝 맺기: 두 컴퓨터에 같은 숫자가 보이는지 확인하고 양쪽에서 확인을 누릅니다. 짝을 맺은 컴퓨터끼리만 연결합니다.
 • 모든 통신은 TLS 1.3으로 암호화합니다.
-• 화면 배치: 서브가 이 화면의 왼쪽·오른쪽·위·아래 어디에 있는지 정합니다.
-• 클립보드 공유: 글·이미지·파일을 복사한 채 넘어가면 커서를 따라 함께 갑니다. 받은 파일은 다운로드\flockswitch 폴더에 저장되고 바로 붙여넣을 수 있습니다(파일·이미지는 100MB까지).
+• 5×3 배치 지도: 마스터와 서브를 5×3 칸에 놓아 실제 책상 위 위치대로 배치합니다. 나란히 놓은 서브끼리도 서로 바로 넘어갑니다.
+• 짝 맺은 컴퓨터마다 '이 컴퓨터의 마우스·키보드로 다른 컴퓨터 쓰기' 스위치를 켜거나 끌 수 있습니다(마스터에서 설정).
+• 클립보드 공유: 글·이미지·파일을 복사한 채 넘어가면 커서를 따라 함께 갑니다. 서브끼리도 마스터를 거쳐 클립보드를 주고받습니다. 받은 파일은 다운로드\flockswitch 폴더에 저장되고 바로 붙여넣을 수 있습니다(파일·이미지는 100MB까지).
 • 넘김 대기 시간: 가장자리에서 잠시 머물러야 넘어가게 하고, 그동안 카운트다운 효과를 보여 줍니다. 없음으로 두면 바로 넘어갑니다.
 • Ctrl을 누른 채 밀 때만 넘어가게 할 수 있어, 실수로 넘어가는 일을 막습니다.
 • 도착하면 넘어간 화면에서 커서 위치를 링·레이더 효과로 보여 줍니다.
-• Mac과 Windows 사이에서 Cmd와 Ctrl을 바꿔 줍니다. Mac의 Caps Lock·Shift+Space를 Windows 한/영 키로 보낼 수 있습니다(Mac에서 설정).
+• 키보드(OS 전환 시): 운영체제 쌍과 방향마다 보조키(Cmd/Ctrl 등, 기능·자리 기준과 대응표), 한/영 키, Caps Lock 길게 누르기, 한자 키, 이동·편집 키, 화면 캡처 단축키 규칙을 정합니다. 서브에서 바꿔도 마스터에 반영됩니다.
 • 어디서든 Ctrl+Alt+Shift+Q로 이 PC로 돌아옵니다.
 
 ■ Logitech Easy-Switch 함께 전환
@@ -40,10 +41,12 @@ Logitech 마우스와 키보드는 Easy-Switch 채널(1·2·3)마다 컴퓨터�
 • 돌아오면 휠 모드 되돌리기: 마우스가 돌아오면 이 PC에서 쓰던 휠 모드(걸림·무한 회전)로 되돌립니다.
 
 ■ 함께 쓰면 편한 기능
+• 사이드바 설정 창: 네트워크(연결과 배치·넘기기·키보드·클립보드·이 컴퓨터), 로지텍(버튼·단축키·모서리 전환·장치), 앱(효과·일반) 메뉴를 크기 고정 창에서 오갑니다.
 • 마우스 찾기: 단축키, 다른 컴퓨터에서 도착, 마우스 흔들기로 커서 주변에 효과를 띄워 커서를 찾습니다.
 • 설정 백업: 설정을 문서\flockswitch 폴더에 저장하고 불러옵니다. Mac·Linux 버전에서 저장한 파일도 불러올 수 있습니다.
+• 지금 업데이트: 새 버전이 나오면 설정 창에서 Microsoft Store를 통해 바로 설치합니다.
 • 한국어 / English
-• 알림 영역에서 조용히 동작하며, 로그인할 때 자동으로 시작할 수 있습니다(관리자 권한 불필요).
+• 알림 영역에서 적은 CPU와 메모리로 조용히 동작하며, 로그인할 때 자동으로 시작할 수 있습니다(관리자 권한 불필요).
 
 ■ 이런 분께 맞습니다
 • Windows PC와 Mac을 나란히 두고 쓰는 분
@@ -78,31 +81,36 @@ flockswitch는 Logitech과 관계없는 개인 오픈소스 프로젝트입니�
 ### 1-3. 이번 버전의 새로운 기능 (What's new in this version)
 
 ```
-2.0.0
-• 네트워크 공유: 같은 로컬 네트워크의 Windows PC와 Mac 사이에서 마우스·키보드·클립보드(글·이미지·파일)를 공유합니다. 마우스·키보드 브랜드는 상관없습니다.
-• 마스터 한 대에 서브 최대 3대. 자동 찾기 또는 IP로 추가, 숫자 확인으로 짝 맺기, TLS 1.3 암호화.
-• 화면 배치, 넘김 대기 시간과 카운트다운 효과, Ctrl을 누른 채 밀 때만 넘기기, 도착 시 커서 위치 표시.
-• Mac↔Windows Cmd/Ctrl 바꾸기, Mac Caps Lock·Shift+Space로 Windows 한/영 전환(Mac에서 설정).
-• 설정 창을 네트워크·전환·장치·효과·일반 탭으로 새로 구성했습니다.
-• Logitech 버튼·단축키·가장자리 전환, 진동, 마우스 찾기, 설정 백업은 그대로입니다. 1.x 설정을 그대로 이어받습니다.
+2.1.0
+• 새 설정 창: 탭 대신 왼쪽 사이드바(네트워크: 연결과 배치·넘기기·키보드·클립보드·이 컴퓨터, 로지텍: 버튼·단축키·모서리 전환·장치, 앱: 효과·일반)가 있는 크기 고정 창으로 바뀌었습니다.
+• 연결과 배치: 이 페이지에서 역할(마스터·서브)을 고르고, 5×3 배치 지도에 컴퓨터를 놓습니다. 나란히 놓은 서브끼리 서로 바로 넘어갑니다.
+• 컴퓨터마다 '이 컴퓨터의 마우스·키보드로 다른 컴퓨터 쓰기' 스위치를 두었습니다(마스터에서 설정).
+• 연결 다시 찾기 버튼과, 절전 모드에서 깨어나거나 잠금을 풀면 자동으로 다시 연결하는 기능을 더했습니다.
+• 서브끼리 클립보드 공유: 마스터를 거쳐 서브 사이에서도 글·이미지·파일 클립보드를 주고받습니다. 클립보드 페이지에서 보낼 항목, 받은 폴더와 최근 파일, 전송 상태를 확인합니다.
+• 키보드 페이지와 'OS 전환 시' 규칙: 운영체제 쌍과 방향마다 보조키(Cmd/Ctrl 등, 기능·자리 기준과 대응표), 한/영 키, Caps Lock 길게 누르기, 한자 키, 이동·편집 키를 따로 정합니다. 서브에서도 바꿀 수 있으며 기존 2.0 키 설정을 그대로 이어받습니다.
+• 지금 업데이트: 새 버전이 있으면 설정 창에서 Microsoft Store를 통해 바로 설치합니다.
+• 마우스 흔들어 찾기 감지를 다듬고, 대기 중 CPU와 메모리 사용량을 줄였습니다.
 ```
 
 ### 1-4. 제품 기능 (Product features)
 
 ```
 로컬 네트워크로 마우스·키보드 공유(브랜드 무관)
-Windows PC와 Mac 사이 클립보드 공유(글·이미지·파일)
-마스터 한 대에 서브 최대 3대
+5×3 배치 지도와 서브끼리 직접 화면 넘기기
+Windows PC와 Mac 사이 클립보드 공유(글·이미지·파일, 서브끼리 공유)
+마스터 한 대에 서브 최대 3대, 컴퓨터별 입력 보내기 스위치
 숫자 확인 짝 맺기와 TLS 1.3 암호화
-화면 배치와 넘김 대기 시간·카운트다운 효과
-Mac↔Windows Cmd/Ctrl 바꾸기와 한/영 전환
+연결 다시 찾기와 절전·잠금 해제 뒤 자동 재연결
+운영체제 쌍별 'OS 전환 시' 키 규칙(Cmd/Ctrl, 한/영, 한자, 이동·편집 키)
+넘김 대기 시간·카운트다운 효과와 Ctrl 누른 채 넘기기
 마우스 버튼 하나로 Logitech 마우스·키보드 함께 전환
 제스처·단축키·화면 가장자리로 채널 전환
 Bolt·Unifying·블루투스 장치 함께 이동
 MX Master 4 진동 알림
 마우스 찾기 효과
+크기 고정 사이드바 설정 창과 Store 지금 업데이트
 설정 백업(Mac·Linux 버전과 호환)
-계정·광고·사용 기록 수집 없음
+적은 대기 CPU·메모리 사용, 계정·광고·사용 기록 수집 없음
 ```
 
 ### 1-5. 검색어 (Search terms, 최대 7개)
@@ -124,19 +132,20 @@ Mac Windows
 ```
 flockswitch lets you run several computers on your desk from one mouse and keyboard. It is free and open source. From 2.0 it works two ways, and you can use both.
 
-■ Network sharing (new in 2.0)
+■ Network sharing
 Share your mouse, keyboard and clipboard between your Windows PCs and Macs on the same local network. Push the cursor off the edge of the screen and it lands on the computer next to it, which you then control with this PC's mouse and keyboard. Any brand of mouse and keyboard works.
 
-• One master with up to three subs. Subs follow the master's screen layout and effect settings.
-• Finds nearby computers automatically (mDNS), or add one by IP address.
+• Choose this computer's role (master or sub) on the Connection and layout page. One master connects with up to three subs, and subs follow the master's screen layout and effect settings.
+• Finds nearby computers automatically (mDNS), or add one by IP address. Use Find connections again to reconnect at once, with automatic reconnecting after sleep or unlock.
 • Pairing: check that both computers show the same number and confirm on both. Only paired computers connect.
 • All traffic is encrypted with TLS 1.3.
-• Screen layout: set whether each sub sits left, right, above or below this screen.
-• Clipboard sharing: copy text, an image or files, cross over, and it goes along with the cursor. Received files are saved in Downloads\flockswitch, ready to paste (files and images up to 100 MB).
+• 5x3 layout map: place the master and subs on a 5x3 grid to match your desk. Subs placed next to each other cross directly from sub to sub.
+• Per-computer switch to allow or block using other computers with that computer's mouse and keyboard (set on the master).
+• Clipboard sharing: copy text, an image or files, cross over, and it goes along with the cursor. Subs also share the clipboard with each other through the master. Received files are saved in Downloads\flockswitch, ready to paste (files and images up to 100 MB).
 • Crossing delay: make the cursor rest at the edge for a moment before it crosses, with a countdown effect while it waits, or cross straight away.
 • Cross only while holding Ctrl, so you never cross by accident.
 • On arrival, a ring or radar effect shows where the cursor is.
-• Swaps Cmd and Ctrl between Mac and Windows. The Mac's Caps Lock or Shift+Space can act as the Windows Korean/English key (set on the Mac).
+• Keyboard (When switching OS): set rules per OS pair and direction for modifier keys (Cmd/Ctrl and others, by function or position with an editable table), Korean/English keys, Caps Lock long press, Hanja key, navigation and edit keys, and screen capture shortcuts. Rules can be edited on a sub as well.
 • Ctrl+Alt+Shift+Q brings you back to this PC from anywhere.
 
 ■ Logitech Easy-Switch, all devices at once
@@ -151,10 +160,12 @@ Logitech mice and keyboards remember one computer on each Easy-Switch channel (1
 • Wheel mode restored: when the mouse comes back, it returns to the wheel mode (ratchet or free spin) you used on this PC.
 
 ■ Also included
+• Sidebar settings window: fixed-size window with a sidebar for Network (Connection and layout, Crossing, Keyboard, Clipboard, This computer), Logitech (Button, Shortcut, Edge switching, Devices), and App (Effects, General).
 • Find the cursor: show an effect around the cursor from a shortcut, on arrival or when you shake the mouse.
 • Settings backup: save settings to Documents\flockswitch and load them again, including files saved by the Mac and Linux versions.
+• Update now: install new versions straight through the Microsoft Store from the settings window.
 • English / Korean
-• Runs quietly in the notification area and can start when you sign in (no administrator rights needed).
+• Runs quietly in the notification area with low idle CPU and memory use, and can start when you sign in (no administrator rights needed).
 
 ■ Made for
 • People who use a Windows PC and a Mac side by side
@@ -189,31 +200,36 @@ Share your mouse, keyboard and clipboard between Windows PCs and Macs over your 
 ### 2-3. What's new in this version
 
 ```
-2.0.0
-• Network sharing: share mouse, keyboard and clipboard (text, images, files) between Windows PCs and Macs on the same local network. Any brand of mouse and keyboard.
-• One master with up to three subs. Automatic discovery or add by IP, number-check pairing, TLS 1.3 encryption.
-• Screen layout, crossing delay with a countdown effect, cross only while holding Ctrl, cursor shown on arrival.
-• Cmd/Ctrl swap between Mac and Windows; Mac Caps Lock or Shift+Space as the Windows Korean/English key (set on the Mac).
-• A new settings window with Network, Switching, Devices, Effects and General tabs.
-• Logitech button, shortcut and edge switching, haptics, find the cursor and settings backup are all still here. Your 1.x settings carry over.
+2.1.0
+• New settings window: fixed-size window with a sidebar (Network: Connection and layout, Crossing, Keyboard, Clipboard, This computer; Logitech: Button, Shortcut, Edge switching, Devices; App: Effects, General) instead of tabs.
+• Connection and layout: choose this computer's role (master or sub) and place computers on a 5x3 layout map. Subs placed side by side cross directly to each other.
+• Per-computer switch to use other computers with this computer's mouse and keyboard (set on the master).
+• Find connections again button, plus automatic reconnecting after waking from sleep or unlocking the session.
+• Sub-to-sub clipboard sharing: share text, images and files between subs through the master, with controls for what is sent, the received folder, recent file and transfer status on the Clipboard page.
+• Keyboard page with 'When switching OS' rules per OS pair and direction: modifier matching (Cmd/Ctrl and others by function or position with an editable table), Korean/English keys, Caps Lock long press, Hanja key, and navigation and edit keys. Editable from subs too, and existing 2.0 key settings carry over.
+• Update now: install a newer version straight through the Microsoft Store when one is available.
+• Improved mouse-shake detection for finding the cursor, and lower idle CPU and memory use.
 ```
 
 ### 2-4. Product features
 
 ```
 Share mouse and keyboard over your local network (any brand)
-Clipboard sharing between Windows and Mac (text, images, files)
-One master with up to three subs
+5x3 layout map with direct sub-to-sub screen crossing
+Clipboard sharing between Windows and Mac (text, images, files, sub-to-sub)
+One master with up to three subs and a per-computer input switch
 Number-check pairing and TLS 1.3 encryption
-Screen layout and crossing delay with a countdown effect
-Cmd/Ctrl swap and Korean/English key between Mac and Windows
+Find connections again and automatic reconnect after sleep or unlock
+Per-OS-pair key rules (Cmd/Ctrl, Korean/English, Hanja, navigation and edit keys)
+Crossing delay with a countdown effect and cross only while holding Ctrl
 Move a Logitech mouse and keyboard together with one button
 Switch channels by gesture, shortcut or screen edge
 Bolt, Unifying and Bluetooth devices move along
 Haptic feedback on the MX Master 4
 Find-the-cursor effects
+Fixed-size sidebar settings window and Store Update now
 Settings backup, compatible with the Mac and Linux versions
-No account, no ads, no tracking
+Low idle CPU and memory use; no account, no ads, no tracking
 ```
 
 ### 2-5. Search terms
@@ -230,7 +246,7 @@ Mac Windows
 
 ## 3. 스크린샷과 캡션
 
-`store-shots/ko/`는 한국어 목록에, `store-shots/en/`은 영어 목록에 올립니다. 순서대로 올리고 캡션을 넣습니다.
+`store-shots/ko/`는 한국어 목록에, `store-shots/en/`은 영어 목록에 올립니다. 순서대로 올리고 캡션을 넣습니다. 2.1 스크린샷은 새 사이드바 설정 창에서 다시 촬영할 예정입니다.
 
 | # | 화면 | 캡션(ko-KR) | Caption (en-US) |
 |---|---|---|---|
@@ -242,7 +258,7 @@ Mac Windows
 
 ## 4. 적용 순서
 
-1. Partner Center → 앱 **Flockswitch** → 2.0.0 패키지가 든 제출이 게시됐는지 확인합니다. 아직 인증 중이면 끝난 뒤에 합니다.
+1. Partner Center → 앱 **Flockswitch** → 2.1.0 패키지가 든 제출이 게시됐는지 확인합니다. 아직 인증 중이면 끝난 뒤에 합니다.
 2. **Start update**(업데이트 시작)로 새 제출을 만듭니다. 패키지는 그대로 둡니다(목록만 바꾸는 제출도 인증을 거칩니다).
 3. Store listings → **한국어**: 1-1~1-4를 붙여 넣고, 기존 스크린샷을 모두 지운 뒤 `store-shots/ko/1~5.png`를 순서대로 올리고 3장의 캡션을 넣습니다.
 4. Store listings → **English**: 2-1~2-4와 `store-shots/en/1~5.png`를 같은 방식으로 넣습니다.
