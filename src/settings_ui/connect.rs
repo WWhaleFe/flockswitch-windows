@@ -109,7 +109,8 @@ impl SettingsApp {
             }
         });
 
-        let background = crate::main_instance_running();
+        // Screenshot mode shows everything healthy.
+        let background = super::shots::active() || crate::main_instance_running();
 
         // The background app that does the sharing is not running.
         if !background || status.as_ref().is_some_and(|s| net.on && !s.running) {
