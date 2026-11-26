@@ -60,7 +60,8 @@ fn window_builder(title: &str, icon: egui::IconData) -> egui::ViewportBuilder {
 
 /// Opens the window. `lock` keeps a second window from opening; a connection to it
 /// means "Settings…" was chosen again, so the window comes back to the front.
-pub fn run(lock: std::net::TcpListener) -> Result<()> {
+/// `show_update` opens on the General page (from the "new version" menu item).
+pub fn run(lock: std::net::TcpListener, show_update: bool) -> Result<()> {
     if let Ok(cfg) = Config::load_or_create() {
         crate::i18n::set_language(&cfg.language);
     }
@@ -91,7 +92,7 @@ pub fn run(lock: std::net::TcpListener) -> Result<()> {
                     ctx.request_repaint();
                 }
             });
-            Ok(Box::new(SettingsApp::new(&cc.egui_ctx, raise, shown)))
+            Ok(Box::new(SettingsApp::new(&cc.egui_ctx, raise, shown, show_update)))
         }),
     )
     .map_err(|e| anyhow!("cannot open the settings window: {e}"))
@@ -105,7 +106,10 @@ const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// Starts the settings window again in a new process, drawing with OpenGL.
 pub fn relaunch_with_opengl() -> Result<()> {
-    std::process::Command::new(std::env::current_exe()?).arg("settings").env(RENDERER_ENV, "glow").spawn()?;
+    // "settings update" (the General page) stays what it was.
+    let mut command = std::process::Command::new(std::env::current_exe()?);
+    command.arg("settings").args(std::env::args().nth(2).filter(|a| a == "update"));
+    command.env(RENDERER_ENV, "glow").spawn()?;
     Ok(())
 }
 
@@ -595,7 +599,7 @@ fn how_viewport() -> egui::ViewportId {
 }
 
 impl SettingsApp {
-    fn new(ctx: &egui::Context, raise: Arc<AtomicBool>, shown: Arc<AtomicBool>) -> SettingsApp {
+    fn new(ctx: &egui::Context, raise: Arc<AtomicBool>, shown: Arc<AtomicBool>, show_update: bool) -> SettingsApp {
         let autostart = crate::tray::autostart();
         let autostart_on = autostart.as_ref().is_some_and(|a| a.is_enabled().unwrap_or(false));
         let image = egui::ColorImage::from_rgba_unmultiplied([ICON_SIDE as usize; 2], ICON_RGBA);
@@ -609,7 +613,7 @@ impl SettingsApp {
             net_notice_open: false,
             net_ips: (Instant::now() - Duration::from_secs(60), Vec::new()),
             net_how: false,
-            page: Page::Connect,
+            page: if show_update { Page::General } else { Page::Connect },
             recording: None,
             gesture_tab: Gesture::Press,
             devices: Vec::new(),
@@ -647,7 +651,7 @@ impl SettingsApp {
             backup_count: 0,
         };
         app.refresh();
-        if app.cfg.check_updates {
+        if show_update || app.cfg.check_updates {
             app.check_update(ctx);
         }
         app
@@ -1379,8 +1383,7 @@ impl SettingsApp {
         let ctx = ui.ctx().clone();
         let current = env!("CARGO_PKG_VERSION");
         let store = crate::store::packaged();
-        let info = if store { t.update_hint_store } else { t.update_hint };
-        section_with(ui, p, t.section_update, Some(info), None, |ui| {
+        section(ui, p, t.section_update, |ui| {
             let busy = matches!(state, UpdateState::Checking | UpdateState::Installing(_));
             let version_line = format!("{} {current}", t.update_current);
             let (title, help) = match &state {
@@ -1396,7 +1399,6 @@ impl SettingsApp {
             };
             let page = if store { t.update_page_store } else { t.update_page };
             let labels: Vec<(&str, ButtonKind)> = match &state {
-                UpdateState::Available(..) | UpdateState::InstallFailed(..) if store => vec![(t.update_install, ButtonKind::Primary)],
                 UpdateState::Available(..) | UpdateState::InstallFailed(..) => vec![(t.update_install, ButtonKind::Primary), (page, ButtonKind::Plain)],
                 _ if busy => vec![],
                 _ => vec![(page, ButtonKind::Plain), (t.update_check, ButtonKind::Plain)],
@@ -1428,90 +1430,79 @@ impl SettingsApp {
             }
             divider(ui, p);
             let mut on = self.cfg.check_updates;
-            if switch_row(ui, p, t.update_check_auto, None, &mut on) {
+            let (flipped, label) = switch_row_full(ui, p, t.update_check_auto, None, &mut on);
+            let check_hint = if store { t.update_check_hint_store } else { t.update_check_hint };
+            info_icon(ui, p, Pos2::new(label.right() + 16.0, label.center().y), "update-auto-help", check_hint);
+            if flipped {
                 self.apply(|c| c.check_updates = on);
             }
             divider(ui, p);
-            ui.add_enabled_ui(self.cfg.check_updates, |ui| {
-                let mut on = self.cfg.auto_update;
-                let note = crate::store::packaged().then_some(t.update_auto_store);
-                if switch_row(ui, p, t.update_auto, note, &mut on) {
-                    self.apply(|c| c.auto_update = on);
-                }
-            });
+            let mut on = self.cfg.auto_update;
+            let note = store.then_some(t.update_auto_store);
+            let (flipped, label) = switch_row_full(ui, p, t.update_auto, note, &mut on);
+            let auto_hint = if store { t.update_auto_hint_store } else { t.update_auto_hint };
+            info_icon(ui, p, Pos2::new(label.right() + 16.0, label.center().y), "auto-update-help", auto_hint);
+            if flipped {
+                self.apply(|c| c.auto_update = on);
+            }
+            ui.add_space(4.0);
         });
     }
 
     /// Saving the settings to a file, loading them from one, managing them, and the
     /// folder they are in, with how many of the allowed number there are.
     fn backup_section(&mut self, ui: &mut Ui, t: &Texts, p: Palette) {
-        let mut clicked = [false; 4];
-        let mut manage_from_note = false;
-        let count = self.backup_count;
-        section_info(ui, p, t.section_backup, Some(t.backup_help), |ui| {
-            ui.add_space(7.0);
+        let count = format!("{}/{}", self.backup_count, MAX_BACKUPS);
+        let count_color = if self.backup_count >= MAX_BACKUPS { p.amber } else { p.muted };
+        let mut manage = false;
+        section_with(ui, p, t.section_backup, Some(t.backup_help), Some((&count, count_color)), |ui| {
+            ui.add_space(10.0);
             let labels = [t.backup_save, t.backup_load, t.backup_manage, t.backup_open];
-            let buttons: f32 = labels.iter().map(|l| button_width(ui, l, ButtonKind::Plain)).sum::<f32>() + 8.0 * 3.0;
-            let count_text = format!("{count}/{MAX_BACKUPS}");
-            let count_color = if count >= MAX_BACKUPS { p.red } else { p.muted };
-            let count_width = ui.painter().layout_no_wrap(count_text.clone(), FontId::proportional(13.0), count_color).size().x;
-            // One row where they fit, else two of two; the count at the right of the first.
-            let rows: &[(usize, usize)] =
-                if buttons + 16.0 + count_width <= ui.available_width() { &[(0, 4)] } else { &[(0, 2), (2, 4)] };
-            for (n, &(first, end)) in rows.iter().enumerate() {
-                if n > 0 {
-                    ui.add_space(6.0);
+            match button_row(ui, p, &labels) {
+                Some(0) => {
+                    // What the file says now, in case the tray menu changed something a moment ago.
+                    let cfg = Config::load_or_create().unwrap_or_else(|_| self.cfg.clone());
+                    self.backup_full = false;
+                    self.backup_note = Some(match backup::save(&cfg) {
+                        Ok(Saved::File(path)) => (format!("{} {}", t.backup_saved, path.file_name().unwrap_or_default().to_string_lossy()), true),
+                        Ok(Saved::Full) => {
+                            self.backup_full = true;
+                            (t.backup_full.to_string(), false)
+                        }
+                        Err(e) => (format!("{} {e:#}", t.backup_save_failed), false),
+                    });
+                    self.backup_count = backup::list().len();
                 }
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    for i in first..end {
-                        clicked[i] = button(ui, p, labels[i], ButtonKind::Plain).clicked();
-                    }
-                    if n == 0 {
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.label(RichText::new(&count_text).size(13.0).color(count_color));
-                        });
-                    }
-                });
-            }
-            ui.add_space(7.0);
-            if let Some((note, ok)) = &self.backup_note {
-                ui.label(RichText::new(note).size(12.5).color(if *ok { p.green } else { p.red }));
-                if self.backup_full && !ok {
-                    ui.add_space(2.0);
-                    manage_from_note = ui.link(RichText::new(t.backup_manage_open).size(12.5)).clicked();
+                Some(1) => {
+                    self.stop_recording();
+                    self.backup_note = None;
+                    self.picker = Some(Picker { files: backup::list(), chosen: None, error: None });
                 }
+                Some(2) => manage = true,
+                Some(3) => {
+                    if let Err(e) = backup::open_folder() {
+                        self.backup_note = Some((format!("{e:#}"), false));
+                        self.backup_full = false;
+                    }
+                }
+                _ => {}
             }
-            ui.add_space(8.0);
+            if self.backup_full {
+                ui.add_space(4.0);
+                if confirm_row_in(ui, p, t.backup_full, p.red, &[(t.backup_manage, ButtonKind::Plain)]).is_some() {
+                    manage = true;
+                }
+            } else if let Some((text, ok)) = &self.backup_note {
+                ui.add_space(6.0);
+                ui.label(RichText::new(text).size(12.5).color(if *ok { p.green } else { p.red }));
+                ui.add_space(6.0);
+            } else {
+                ui.add_space(12.0);
+            }
         });
-        let [save, load, manage, open] = clicked;
-        if save {
-            // What the file says now, in case the tray menu changed something a moment ago.
-            let cfg = Config::load_or_create().unwrap_or_else(|_| self.cfg.clone());
-            self.backup_full = false;
-            self.backup_note = Some(match backup::save(&cfg) {
-                Ok(Saved::File(path)) => (format!("{} {}", t.backup_saved, path.file_name().unwrap_or_default().to_string_lossy()), true),
-                Ok(Saved::Full) => {
-                    self.backup_full = true;
-                    (t.backup_full.to_string(), false)
-                }
-                Err(e) => (format!("{} {e:#}", t.backup_save_failed), false),
-            });
-            self.backup_count = backup::list().len();
-        }
-        if load {
-            self.stop_recording();
-            self.picker = Some(Picker { files: backup::list(), chosen: None, error: None });
-        }
-        if manage || manage_from_note {
+        if manage {
             self.stop_recording();
             self.manager = Some(Manager { files: backup::list(), renaming: None, deleting: None, note: None });
-        }
-        if open {
-            if let Err(e) = backup::open_folder() {
-                self.backup_note = Some((format!("{e:#}"), false));
-                self.backup_full = false;
-            }
         }
     }
 
@@ -1534,7 +1525,7 @@ impl SettingsApp {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(t.backup_manage_title).font(bold(16.0)).color(p.text));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let color = if m.files.len() >= MAX_BACKUPS { p.red } else { p.muted };
+                    let color = if m.files.len() >= MAX_BACKUPS { p.amber } else { p.muted };
                     ui.label(RichText::new(format!("{}/{MAX_BACKUPS}", m.files.len())).size(13.0).color(color));
                 });
             });
@@ -2531,6 +2522,32 @@ fn confirm_row_in(ui: &mut Ui, p: Palette, explain: &str, color: Color32, labels
     clicked
 }
 
+/// Plain buttons side by side across the row. When they do not fit at their usual
+/// width, each gets its label's width with less padding, and what is left of the row
+/// is shared equally. Returns the index clicked.
+fn button_row(ui: &mut Ui, p: Palette, labels: &[&str]) -> Option<usize> {
+    let gap = 8.0;
+    let room = ui.available_width() - gap * (labels.len() - 1) as f32;
+    let usual: Vec<f32> = labels.iter().map(|l| button_width(ui, l, ButtonKind::Plain)).collect();
+    let tight: Vec<f32> = labels.iter().map(|l| text_width(ui, l, ButtonKind::Plain) + 16.0).collect();
+    let widths: Vec<f32> = if usual.iter().sum::<f32>() <= room {
+        usual
+    } else {
+        let spare = ((room - tight.iter().sum::<f32>()) / labels.len() as f32).max(0.0);
+        tight.iter().map(|w| w + spare).collect()
+    };
+    let mut clicked = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        for (i, (label, width)) in labels.iter().zip(widths).enumerate() {
+            if button_sized(ui, p, label, ButtonKind::Plain, width).clicked() {
+                clicked = Some(i);
+            }
+        }
+    });
+    clicked
+}
+
 /// `text` on one line, cut with "…" to fit `width`.
 fn elided(ui: &Ui, text: &str, font: FontId, color: Color32, width: f32) -> Arc<egui::Galley> {
     let mut job = egui::text::LayoutJob::simple_singleline(text.to_string(), font, color);
@@ -2641,11 +2658,6 @@ fn rename_error(t: &Texts, e: &RenameError) -> String {
         RenameError::Name(NameError::Taken) => t.name_taken.into(),
         RenameError::Io(why) => format!("{} {why}", t.backup_rename_failed),
     }
-}
-
-/// A titled card with an "i" beside the title that explains it (`info`).
-fn section_info(ui: &mut Ui, p: Palette, title: &str, info: Option<&str>, add: impl FnOnce(&mut Ui)) {
-    section_with(ui, p, title, info, None, add);
 }
 
 /// A card only when `show`: a list that is empty is drawn as a ghost card instead.
@@ -3453,7 +3465,7 @@ mod tests {
         let ctx = egui::Context::default();
         install_fonts(&ctx);
         install_style(&ctx);
-        let mut app = SettingsApp::new(&ctx, Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)));
+        let mut app = SettingsApp::new(&ctx, Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)), false);
         let pages = [Page::Connect, Page::Cross, Page::Keys, Page::Clip, Page::This, Page::Buttons, Page::Hotkeys, Page::Edges, Page::Devices, Page::Effects, Page::General];
         let screen = Rect::from_min_size(Pos2::ZERO, Vec2::from(WINDOW_SIZE));
         let mut overlaps: Vec<String> = Vec::new();

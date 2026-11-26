@@ -192,7 +192,9 @@ fn real_main(args: &[String]) -> Result<()> {
                 report_settings_failure(&e);
                 return Err(e);
             };
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| settings_ui::run(lock)))
+            // `settings update` opens on the General tab, where the new version is.
+            let update = args.get(1).map(String::as_str) == Some("update");
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| settings_ui::run(lock, update)))
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("the settings window crashed")));
             match result {
                 // If Direct3D could not start, try once more with OpenGL.
