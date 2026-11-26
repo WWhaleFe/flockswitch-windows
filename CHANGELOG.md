@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 - 2026-11-27
+
+- A settings import from a 2.0 test build that fails no longer resets all settings to the defaults; it is logged and tried again at the next start.
+- Agreeing to the network cautions while sharing is already on now hands the screen edges to network crossing (the Logitech edge switching turns off), as switching sharing on does.
+
 ## 2.0.0 - 2026-11-26
 
 - Network sharing of mouse, keyboard and clipboard between a master and up to three subs, with pairing and screen layout. Logitech features remain available. Enabling network sharing takes the edges; enabling Logitech edges pauses network crossing. Refreshed settings UI. Mac Caps Lock and Shift+Space can switch Korean/English on Windows; configure these on the Mac. Upgrades 1.x in place, preserving settings, startup, Store identity and updates; imports test-build network settings and pairing identity once.

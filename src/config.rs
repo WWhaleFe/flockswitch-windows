@@ -1029,7 +1029,11 @@ impl Config {
     /// Loads the config, writing the defaults on first run so users have a file to edit.
     pub fn load_or_create() -> Result<Config> {
         let path = Self::path();
-        Self::migrate_test_network(&Self::base_dir()).context("migrating test-build network settings")?;
+        // A failed import of test-build networking must never cost the user's own
+        // settings: it is logged, left unmarked and tried again at the next start.
+        if let Err(e) = Self::migrate_test_network(&Self::base_dir()) {
+            log::warn!("migrating test-build network settings: {e:#}");
+        }
         if !path.exists() {
             let cfg = Config::default();
             cfg.save()?;
@@ -2031,7 +2035,12 @@ mod network_tests {
 
 impl Config {
     pub fn resolve_edge_owner(&mut self, previous: &Config) {
-        if self.network.on && !previous.network.on { self.edges.on = false; }
+        // Sharing starts when it is switched on, or when its cautions are agreed to
+        // while it is already on (e.g. settings carried over from a test build).
+        let sharing = |c: &Config| c.network.on && c.network.notice_accepted;
+        if (self.network.on && !previous.network.on) || (sharing(self) && !sharing(previous)) {
+            self.edges.on = false;
+        }
     }
     pub fn network_edges_allowed(&self) -> bool { self.network.on && !self.edges.on }
     pub fn logitech_edges_allowed(&self) -> bool {
@@ -2041,6 +2050,15 @@ impl Config {
 #[cfg(test)]
 mod owner_tests {
     use super::*;
+    #[test]
+    fn agreeing_to_cautions_with_sharing_already_on_takes_the_edges() {
+        let mut c = Config::default();
+        c.edges.on = true; c.edges.right = 2; c.network.on = true;
+        let previous = c.clone(); c.network.notice_accepted = true; c.resolve_edge_owner(&previous);
+        assert!(!c.edges.on && c.network_edges_allowed());
+        let previous = c.clone(); c.edges.on = true; c.resolve_edge_owner(&previous);
+        assert!(c.edges.on && c.logitech_edges_allowed());
+    }
     #[test]
     fn sharing_takes_edges_but_logitech_can_pause_crossing() {
         let before = Config::default();
