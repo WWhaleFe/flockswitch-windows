@@ -7,7 +7,8 @@
 //! The shared part (edge geometry, the watcher) is the same in every port; the
 //! `platform` module at the end reads the cursor and the displays.
 
-use crate::config::{Edge, Edges, ShakeKey, EDGES};
+use crate::config::{Edge, Edges, ShakeKey};
+use crate::config::EDGES;
 use crate::device::waveform;
 use crate::overlay;
 use crate::shared::Shared;
@@ -28,8 +29,7 @@ const INSET: f64 = 24.0;
 pub(crate) const HAPTIC_TICK: Duration = Duration::from_millis(150);
 /// A pulse takes a moment to play; Change Host right after would cut it short.
 const FINAL_PULSE: Duration = Duration::from_millis(150);
-/// A shake is the cursor going back and forth without a break: each stroke at least
-/// this far before it turns, and each turn within this long of the one before.
+/// A turn of a shake comes after at least this many points of travel one way.
 const SHAKE_MIN_RUN: f64 = 80.0;
 const SHAKE_GAP: Duration = Duration::from_millis(400);
 /// However short the time asked for, a shake has at least this many turns.
@@ -110,9 +110,9 @@ pub(crate) fn rising_pulse(progress: f64) -> (Duration, u8) {
     }
 }
 
-/// Notices the cursor being shaken from side to side for a while: the shake must go on,
-/// turn after turn with no pause longer than `SHAKE_GAP`, for the whole time asked for.
-/// A quick jiggle, ordinary movement and slow sweeps back and forth do not count.
+/// Notices the cursor being shaken from side to side for a while: the turns must keep
+/// coming, each within `SHAKE_GAP` of the last, for the whole time asked for, and with
+/// a key asked for, only while that key is held.
 #[derive(Default)]
 struct Shake {
     last_x: Option<f64>,
@@ -180,13 +180,13 @@ impl Shake {
 
 /// Plays the countdown once, at an edge of the display the cursor is on, for the
 /// settings window. At least a second, so a short wait can still be judged.
-pub fn preview(edges: &Edges) {
+pub fn preview(edges: &Edges, delay_ms: u64) {
     let displays = platform::displays();
     let cursor = platform::cursor();
     let on_cursor = cursor.and_then(|(x, y)| displays.iter().find(|d| d.contains(x, y)));
     let Some(display) = on_cursor.or(displays.first()) else { return };
     let edge = EDGES.into_iter().find(|&e| edges.channel(e) != 0).unwrap_or(Edge::Right);
-    let duration = Duration::from_millis(edges.dwell_ms.max(1000));
+    let duration = Duration::from_millis(delay_ms.max(1000));
     overlay::edge_begin(edges, edge, display, Duration::ZERO, duration, true);
 }
 
@@ -208,6 +208,11 @@ pub fn spawn(shared: Arc<Shared>) {
         .name("edges".into())
         .spawn(move || watch(shared))
         .expect("spawning the edge watcher");
+}
+
+/// The app handles delayed network crossings; netcore handles immediate crossings.
+fn edge_activity(cfg: &crate::config::Config) -> (bool, bool) {
+    (cfg.logitech_edges_allowed(), cfg.network_edges_allowed() && cfg.network.notice_accepted && cfg.network.cross_delay_ms > 0)
 }
 
 fn watch(shared: Arc<Shared>) {
@@ -244,10 +249,11 @@ fn watch(shared: Arc<Shared>) {
             cfg = shared.config();
             announced = false;
         }
-        let active = cfg.enabled && cfg.edges.on && cfg.edges.any();
+        let (logitech_active, network_active) = edge_activity(&cfg);
+        let active = logitech_active || network_active;
         if !announced {
             announced = true;
-            if active {
+            if logitech_active {
                 let list: Vec<String> = crate::config::EDGES
                     .iter()
                     .filter(|&&e| cfg.edges.channel(e) != 0)
@@ -269,7 +275,7 @@ fn watch(shared: Arc<Shared>) {
             }
             let now_here = st.trigger.is_some();
             let arrived = now_here && !mouse_here && !first;
-            if arrived && active && cfg.edges.place_cursor {
+            if arrived && logitech_active && cfg.edges.place_cursor {
                 // The mouse has come back from the channel it was sent to: put the
                 // cursor at that channel's edge, as if it had come in from there.
                 if let Some(edge) = landing_channel.take().and_then(|c| cfg.edges.edge_for(c)) {
@@ -312,16 +318,27 @@ fn watch(shared: Arc<Shared>) {
             displays = platform::displays();
         }
         let Some((x, y)) = platform::cursor() else { continue };
-        let Some(edge) = edge_at(&displays, x, y, f64::from(cfg.edges.corner_margin)) else {
+        let margin = if logitech_active { f64::from(cfg.edges.corner_margin) } else { cfg.network.corner_margin };
+        let Some(edge) = edge_at(&displays, x, y, margin) else {
             resting = None;
             armed = true;
             last_tick = None;
             end_countdown(&mut counting_down);
             continue;
         };
+        // While network sharing is on the edges belong to it: only a side with a
+        // connected computer waits and crosses, the others do nothing.
+        let network = cfg.network_edges_allowed();
+        if network && !(network_active && crate::net::network_side_ready(edge)) {
+            resting = None;
+            last_tick = None;
+            end_countdown(&mut counting_down);
+            continue;
+        }
         // With "hold Control" the wait starts only with the key down; letting go calls
         // it off, and pressing again at the same edge starts over.
-        if cfg.edges.require_control && !platform::control_down() {
+        let require_control = if network { cfg.network.require_control } else { cfg.edges.require_control };
+        if require_control && !platform::control_down() {
             resting = None;
             last_tick = None;
             end_countdown(&mut counting_down);
@@ -337,9 +354,13 @@ fn watch(shared: Arc<Shared>) {
             }
         };
         let channel = cfg.edges.channel(edge);
-        let dwell = Duration::from_millis(cfg.edges.dwell_ms);
+        let dwell = Duration::from_millis(if network { cfg.network.cross_delay_ms } else { cfg.edges.dwell_ms });
         let cooling = last_switch.is_some_and(|t| t.elapsed() < COOLDOWN);
-        let will_switch = armed && channel != 0 && mouse_here && here != Some(channel) && !cooling;
+        let will_switch = if network {
+            armed && !cooling
+        } else {
+            armed && channel != 0 && mouse_here && here != Some(channel) && !cooling
+        };
         if will_switch {
             if !counting_down {
                 if let Some(display) = displays.iter().find(|d| d.contains(x, y)) {
@@ -366,6 +387,20 @@ fn watch(shared: Arc<Shared>) {
         // One decision per visit to the edge.
         armed = false;
         end_countdown(&mut counting_down);
+        if network {
+            if cooling {
+                continue;
+            }
+            log::info!("{} edge: crossing to the network computer", edge.name());
+            last_switch = Some(Instant::now());
+            // No channel switch follows, so nothing else plays the last pulse.
+            if cfg.haptics.on_edge && cfg.haptics.progressive {
+                shared.request_haptic(waveform::COMPLETED);
+                std::thread::sleep(FINAL_PULSE);
+            }
+            crate::net::cross(edge, x, y);
+            continue;
+        }
         if channel == 0 {
             continue;
         }
@@ -395,7 +430,7 @@ fn watch(shared: Arc<Shared>) {
 
 /// The cursor and the displays, in Windows' virtual-screen coordinates (origin at the
 /// top left of the primary display, y down). None of this needs a permission.
-mod platform {
+pub(crate) mod platform {
     use super::Rect;
     use crate::config::ShakeKey;
     use windows_sys::Win32::Foundation::{LPARAM, POINT, RECT};
@@ -508,7 +543,7 @@ mod tests {
         assert_eq!(landing(&[], Edge::Left), None);
     }
 
-    /// Reads this computer's cursor and displays: `cargo test platform -- --ignored --nocapture`.
+    /// Reads this Mac's cursor and displays: `cargo test platform -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn platform_reads() {
@@ -531,8 +566,8 @@ mod tests {
         assert_eq!(rising_pulse(1.2), (Duration::from_millis(60), waveform::SHARP_COLLISION));
     }
 
-    /// Feeds x positions, one poll apart (25 ms), with the key held or not; returns at
-    /// which polls a shake was noticed.
+    /// Feeds x positions, one poll apart, with the key held where `held` says; returns
+    /// at which positions a shake lasting `time` was noticed.
     fn shake_on(xs: &[f64], held: impl Fn(usize) -> bool, needed: Duration) -> Vec<usize> {
         let mut s = Shake::default();
         let start = Instant::now();
@@ -617,5 +652,27 @@ mod tests {
         assert_eq!(last_channel("1 → 2"), Some(2));
         assert_eq!(last_channel("→ 3"), Some(3));
         assert_eq!(last_channel(""), None);
+    }
+}
+
+#[cfg(test)]
+mod owner_tests {
+    use super::*;
+    #[test]
+    fn watcher_has_at_most_one_owner() {
+        for enabled in [false, true] {
+            for network in [false, true] {
+                for edges in [false, true] {
+                    let mut c = crate::config::Config::default();
+                    c.enabled = enabled; c.network.on = network; c.edges.on = edges;
+                    c.edges.right = 2; c.network.notice_accepted = true; c.network.cross_delay_ms = 500;
+                    assert_eq!(edge_activity(&c), (enabled && edges, network && !edges));
+                    c.edges.right = 0;
+                    assert!(!edge_activity(&c).0);
+                    c.network.cross_delay_ms = 0;
+                    assert!(!edge_activity(&c).1);
+                }
+            }
+        }
     }
 }

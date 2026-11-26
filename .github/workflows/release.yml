@@ -30,6 +30,7 @@ jobs:
           done
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked
+      - run: cargo test --locked --manifest-path netcore/Cargo.toml
       - run: cargo build --release --locked
       - name: Collect files
         shell: pwsh
@@ -73,7 +74,7 @@ jobs:
       - name: Release notes from CHANGELOG.ko.md and CHANGELOG.md
         run: |
           version="${GITHUB_REF_NAME#v}"
-          # The lines under "## <version> — <date>", up to the next "## ".
+          # The lines under "## <version> - <date>", up to the next "## ".
           section() {
             awk -v v="$version" '
               /^## / { if (found) exit; if (index($0, "## " v " ") == 1) { found = 1; next } }
@@ -104,4 +105,5 @@ jobs:
           # --generate-notes adds GitHub's "Full Changelog" link after notes.md.
           gh release create "$GITHUB_REF_NAME" flockswitch-setup-*.exe flockswitch-*.zip SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --title "flockswitch $GITHUB_REF_NAME" \
-            --notes-file notes.md --generate-notes
+            --notes-file notes.md --generate-notes \
+            $(case "$GITHUB_REF_NAME" in *-*) echo --prerelease;; esac)

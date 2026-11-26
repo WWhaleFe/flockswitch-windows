@@ -15,4 +15,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked
+      - run: cargo test --locked --manifest-path netcore/Cargo.toml
       - run: cargo build --release --locked

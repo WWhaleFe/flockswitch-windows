@@ -1,30 +1,34 @@
 # Changelog
 
+## 2.0.0 - 2026-11-26
+
+- Network sharing of mouse, keyboard and clipboard between a master and up to three subs, with pairing and screen layout. Logitech features remain available. Enabling network sharing takes the edges; enabling Logitech edges pauses network crossing. Refreshed settings UI. Mac Caps Lock and Shift+Space can switch Korean/English on Windows; configure these on the Mac. Upgrades 1.x in place, preserving settings, startup, Store identity and updates; imports test-build network settings and pairing identity once.
+
 ## 1.10.0 - 2026-11-19
 
 - **Restore the wheel mode on return**: when the master mouse comes back, flockswitch puts its wheel back to the ratchet or free-spinning mode it had on this computer. After switching to another device with the wheel mode-shift button, a press there before flockswitch had taken the button (in the moments after the mouse arrives, for example on Android) made the mouse flip its wheel by itself, and the mouse came back that way. The mode is remembered while flockswitch holds the button, so a change made in Logi Options+ is kept as the new one, and it is kept on disk (`wheel-mode.toml`) for after a restart. Only the wheel mode is written (SmartShift 0x2110 / 0x2111), not the SmartShift sensitivity. On by default, with a switch in Settings → Switching → wheel mode-shift button and `set keep_wheel_mode true|false`; it acts only while that button switches
 - **Buttons taken back sooner**: when the master mouse links again, its buttons are taken 0.25 s later instead of after 1.5 s; a divert the mouse does not confirm is tried again 2 s later instead of at the next 30-second check; and a mouse that does not answer no longer makes each of the other buttons wait out its own timeout
 
-## 1.9.0 — 2026-11-12
+## 1.9.0 - 2026-11-12
 
 - **Less memory while it runs all day**: the notification-area icon no longer keeps a list of its hover and click events that nothing reads and that grew for as long as flockswitch ran. The drawing for the edge countdown and find the cursor starts with the first effect instead of at start-up, the daily look for updates no longer copies the settings every second, and room taken by a burst of mouse reports is given back once they are handled
 - Tidier code: unused code and duplicate helpers are gone. How flockswitch works and looks, its settings file and its commands stay the same, so settings from 1.8.0 load unchanged
 - README: Bluetooth is marked as tested
 
-## 1.8.0 — 2026-11-10
+## 1.8.0 - 2026-11-10
 
 - **Each edge countdown effect has its own settings**: ring, semicircle, bar, pulse, laser, vortex, scan and liquid each keep their own colour and size, and the ring, semicircle and bar their own direction (the ring and semicircle also their own shrinking away). Choosing "Both ways" for the ring no longer changes the bar. Switching the effect in Switching → Edges shows that effect's settings, and the preview uses them. On the command line: `set edge.ring.color #FF3B30`, `set edge.bar.size 125`, `set edge.semicircle.direction both`, `set edge.ring.shrink true`; the older `set edge.anim_color` (and `anim_size`, `anim_direction`, `anim_shrink`) changes the chosen effect, or every effect when none or Random is chosen. Settings from earlier versions give every effect the colour, size and direction they had. In the settings file each effect is a `[edges.effects.<name>]` table, the same on macOS and Linux, so backups move between them; the old `anim_*` keys are still written for the chosen effect
 - **Random shows the variety**: each countdown picks an effect with its own colour and size, and also a random direction (ring, semicircle, bar) and a random shrinking away (ring, semicircle). A specifically chosen effect keeps its saved direction and shrinking
 - **Settings backup**: shorter buttons, **Save**, **Load…**, **Manage…** and **Open folder**, and the number of saved files (3/10). At most 10 files are kept in Documents\flockswitch: at 10, Save writes nothing and says so in red, with a link to Manage. **Manage…** lists the files newest first with their date; each can be **renamed** in its row (up to 60 characters, none of / \ : * ? " < > |, no names Windows keeps for devices such as CON or NUL, never over another file; it stays a .toml) or **deleted** after a second click, to the Recycle Bin (the note says when a file had to be deleted for good). The ⓘ explains the limit, managing and copying files to another computer
 - **Settings window**: opens 1020 tall, and when the page shown is taller than the window (on the General tab with every find-the-cursor option on, say) the window grows once to fit, up to the screen's height. It never shrinks a window you made larger, and the size it grows to is kept when the window moves to a monitor with other scaling
 
-## 1.7.1 — 2026-11-10
+## 1.7.1 - 2026-11-10
 
 - Haptics is back in its own card under Find the cursor in the left column, as on the Mac; in 1.7.0 it sat at the top of the language card and broke the layout
 - More room between rows and the lines between them. Rows with a segment bar or buttons on the right (size, language, shortcut) sat almost on the line below, because the control pulled the row's height in; now the space above and below is even
 - The settings window opens 960 tall to fit the extra room, so the General tab still fits without scrolling
 
-## 1.7.0 — 2026-11-10
+## 1.7.0 - 2026-11-10
 
 - **Settings backup** (Settings → General): **Save** writes the settings as `flockswitch-settings-<computer>-<date-time>.toml` into Documents\flockswitch, **Load…** lists the files there, newest first, and after you confirm loads the one chosen (a file that is not a flockswitch settings file, or has a value this version cannot use, is refused with the reason), and **Open folder** opens that folder in Explorer. A file saved by the macOS or Linux version loads too: settings Windows does not have are passed over, and a shortcut Windows cannot use (one with ⌘) is left empty. Channels are set per computer, so check them after loading on another computer
 - Find the cursor by shaking: it now takes shaking back and forth without a break for a time you choose, **0.5 / 1 / 1.5 / 2 s** (`set locate.shake_time 1000`, the default), and optionally only while **Ctrl**, **Alt** or **Shift** is held (`set locate.shake_key ctrl`). A brief jiggle or ordinary movement no longer brings it up
@@ -33,7 +37,7 @@
 - Updates: **Check now** that finds a new version offers **Update now**, which installs it in the background (through the Microsoft Store for the Store version, from GitHub otherwise), whatever the automatic switches say. A new version the tray app already found is offered at once, and a failed check or install says why. The explanation moved into an ⓘ beside the title
 - General tab: haptics is a row in the card with the language and start at login, so the tab still fits the window. **Show log** is gone (the log is still written)
 
-## 1.6.0 — 2026-11-10
+## 1.6.0 - 2026-11-10
 
 - **Automatic updates**: Settings → General → **Updates** shows the version, has **Check now** / **Update now**, and two switches, **Check for new versions automatically** (at start and once a day) and **Install new versions automatically** (`set check_updates`, `set auto_update`). The tray menu offers a new version too
   - Microsoft Store version: asks the Microsoft Store and installs the new version in the background; flockswitch closes for a moment and starts again
@@ -42,7 +46,7 @@
 - Releases include SHA256SUMS.txt
 - Privacy policy: the update check and download are the only internet connection
 
-## 1.5.0 — 2026-11-10
+## 1.5.0 - 2026-11-10
 
 - Haptics window: each situation on one line (name, pulse, Feel, switch), and 'use haptics / strength' set apart from the situations with more room between rows
 - Haptics settings tidied: the pulse as the mouse leaves and the one when it is back are switched on and off on their own, each with its pulse beside it. Waiting at an edge offers **Rising / Even**; the edge waveform, which went unused by default, is folded into that choice (`set haptics.arrive true|false`)
@@ -52,13 +56,13 @@
 - Effect size: the edge countdown and the find-the-cursor highlight each have a size, 75 to 150% (`set edge.anim_size`, `set locate.size`; 50 to 200% on the command line)
 - A more consistent settings window: buttons, drop-downs and segment bars share one height, buttons a minimum width, row labels one weight, and the other-colour button is round like the rest. On the General tab the haptics summary moved to the right column, so the tab fits without scrolling
 
-## 1.4.0 — 2026-11-09
+## 1.4.0 - 2026-11-09
 
 - Effect colours: the screen-edge countdown and the find-the-cursor highlight each have their own colour (seven ready-made, any other from the picker). `set edge.anim_color #0A84FF`, `set locate.color #34C759`
 - Random effects: choose **Random** for the edge countdown or the highlight and each one shows a different effect
 - A larger settings window (840×840 to start, 760×640 to 1200×1100) with two columns on the Switching and General tabs; the Switching tab fits without scrolling at the default size
 
-## 1.3.0 — 2026-11-09
+## 1.3.0 - 2026-11-09
 
 - Settings window: its size stays within fixed limits (540×680 to start, 480×580 to 680×820), it no longer maximizes, and it keeps its size when you change tabs (a long page scrolls inside). The General tab gains Show log and Reset settings
 - Haptics window: **Haptics Settings…** on the General tab opens a modal window with on/off, strength and the waveforms for switching, arrival and waiting at an edge, closed with Apply (stay open), OK (save and close) or Close (revert). A waveform you apply is played once
@@ -69,54 +73,54 @@
 - Receivers: devices that answer slowly while waking are read again, stale entries for a device that moved to another slot go away, a device that reports no wireless ID is no longer listed under an empty one, and offline paired devices are looked for more often while no mouse has been found
 - A device without switching is no longer read again forever
 
-## 1.2.0 — 2026-11-08
+## 1.2.0 - 2026-11-08
 
 - Haptics on a mouse with a motor (MX Master 4, HID++ feature 0x19B0): a pulse as the mouse is switched away and one when it comes back here, and short pulses while the cursor waits at a screen edge to switch (Settings → General → **Haptics**; both can be turned off). The strength follows the haptics setting in Logi Options+. A mouse without a motor is simply quiet; `list` shows the waveforms a mouse offers, and `set haptics.switch_waveform`, `haptics.arrive_waveform`, `haptics.edge_waveform` choose them (0-14, 27)
 - Haptics: the strength can be chosen (Settings → General → Haptics: Options+'s own setting, or 25/50/75/100 %). A chosen strength goes to the mouse at once, with a pulse to judge it by, and is applied again whenever the mouse is here, since the mouse forgets it when it loses power; `set haptics.intensity <0-100>`
 
-## 1.1.0 — 2026-11-08
+## 1.1.0 - 2026-11-08
 
 - Switching at the screen edge, as Logi Flow does but without a network: rest the cursor against an outer edge of the screen for a moment and the group and the master mouse go to the channel set for that side (Settings → Switching → **Edges**: each side's channel, the time at the edge from 0.3 to 2 s, and whether the cursor is put at that edge when the mouse comes back). Each computer watches only its own screen; the corners do not count, nor does an edge that continues onto another display.
 - Settings: the channel rows of the buttons, the gesture directions and the screen edges now start with a gray **Off** segment, which replaces the on/off switch above each of them. Gray, not the accent colour, so a chosen Off reads as switched off
 - Command line: `set edges true|false`, `set edge.left|right|top|bottom <1-3|none>`, `set edge.dwell <ms>`, `set edge.cursor true|false`
 
-## 1.0.2 — 2026-11-03
+## 1.0.2 - 2026-11-03
 
 - Microsoft Store version: after an update, flockswitch starts again by itself, quietly in the notification area. Installing a Store update (also the automatic one) closes the running flockswitch, and until now the button did nothing until the next login. The setup program here already restarted it
 
-## 1.0.1 — 2026-11-03
+## 1.0.1 - 2026-11-03
 
 - flockswitch starts quietly as the ⇄ icon in the notification area, also the first time and at every login: no settings window opens. Open it from the icon's menu (**Settings…**) or by starting flockswitch again. Hovering the icon shows what it found (or the mouse it is looking for)
 - Start at login passes `tray --login`, so a second copy started at login (for example the Store version next to the download) never opens the settings window either. An existing start-at-login entry is updated on the next start
 
-## 1.0.0 — 2026-11-02
+## 1.0.0 - 2026-11-02
 
 - First version for the Microsoft Store (as Flockswitch, by WWhaleFe), the same program as the download here. In the Store version, start at login is managed by Windows: on from the first start, switched in Settings → Apps → Startup (the General tab opens it)
 - The first start opens the settings window, and while no mouse is found its header names the one flockswitch needs (Logitech MX Master 3 or 4)
 - `flockswitch list` also shows the version and whether it runs as the Store package
 
-## 0.4.4 — 2026-11-02
+## 0.4.4 - 2026-11-02
 
 - “Go to channel”: this PC's own channel is locked as soon as flockswitch starts. In 0.4.3 it was only found after the first press or after the mouse reconnected, so until then every channel could be chosen
 - “Go to channel”: this PC's own channel is drawn as a grayed-out, sunken box, so it is clearly not available
 
-## 0.4.3 — 2026-11-02
+## 0.4.3 - 2026-11-02
 
 - Switching: each button (and each gesture direction) now goes to one channel, “Go to channel” (이동할 채널), instead of stepping through several. Settings are kept per computer, so choose on each PC where it goes; this PC's own channel is shown but cannot be chosen. Settings from earlier versions keep working and show where a press goes from this PC
 
-## 0.4.2 — 2026-11-02
+## 0.4.2 - 2026-11-02
 
 - Settings window: opens again on PCs where it did nothing (seen with Intel UHD 620). It now draws with Direct3D 12 only instead of also trying Vulkan, whose Intel driver could hang without an error
 - Settings window: if nothing is on screen after 8 seconds, it starts again with OpenGL, and says so if that does not work either; a stuck window no longer keeps "Settings…" from doing anything
 - Settings window: when it cannot start because its local port is reserved or blocked (Hyper-V, WSL, Docker), it says so and logs why, instead of quitting silently
 
-## 0.4.1 — 2026-10-31
+## 0.4.1 - 2026-10-31
 
 - Keyboard shortcuts: one per channel (Settings → Switching → Shortcuts, off until turned on; Ctrl+Alt+1 / 2 / 3 until changed). Pressed on any keyboard, they send the group and the master mouse to that channel. Only devices on this PC can be moved. Registered with Windows (no administrator rights); while you set a new one the shortcuts pause, so pressing it records it instead of switching
 - Command line: `set hotkeys true|false`, `set hotkey.<1-3> <keys|none>`
 - Settings → General and the README say which mice flockswitch was built and tested with (MX Master 3 and 4); other Logitech mice are not tested yet
 
-## 0.4.0 — 2026-10-31
+## 0.4.0 - 2026-10-31
 
 - flockswitch for Windows now has its own repository (WWhaleFe/flockswitch-windows), prepared for the Microsoft Store; the macOS version moved to WWhaleFe/flockswitch-mac. Switching, devices and settings are the same as 0.3.5, and existing settings are kept
 - Removed for the Store: the in-app update check and download (new versions come from the Store or the releases page) and "Report to the developer". flockswitch makes no internet connections

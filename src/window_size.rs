@@ -48,11 +48,6 @@ impl SizeKeeper {
         SizeKeeper { min, max, scale: None, good: None, restoring: None }
     }
 
-    /// A window that keeps one size.
-    pub fn fixed(size: Size) -> SizeKeeper {
-        SizeKeeper::new(size, size)
-    }
-
     /// The smallest and largest size.
     pub fn limits(&self) -> (Size, Size) {
         (self.min, self.max)
@@ -208,7 +203,7 @@ mod tests {
 
     #[test]
     fn a_fixed_window_keeps_its_one_size() {
-        let mut k = SizeKeeper::fixed([620.0, 440.0]);
+        let mut k = SizeKeeper::new([620.0, 440.0], [620.0, 440.0]);
         assert_eq!(k.step(1.0, [620.0, 440.0]), None);
         assert_eq!(k.step(1.75, [620.0, 440.0]), Some(Fix { limits: true, size: [620.0, 440.0] }));
         assert_eq!(k.step(1.75, [620.0, 440.0]), None);

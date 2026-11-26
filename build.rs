@@ -1,5 +1,5 @@
 //! Every build gets the app icon at 96 px for the settings window. Windows builds also
-//! get version info (product name/version — required by SignPath), an application
+//! get version info (product name/version - required by SignPath), an application
 //! manifest and an .ico, all made from packaging/icon/flockswitch.png.
 
 #[allow(dead_code)]
@@ -42,7 +42,7 @@ const WINDOW_ICON: u32 = 96;
 /// Modern common controls (menus look native) and per-monitor DPI awareness (sharp icon).
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="flockswitch" version="1.0.0.0"/>
+  <assemblyIdentity type="win32" name="flockswitch" version="2.0.0.0"/>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"

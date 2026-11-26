@@ -15,7 +15,7 @@
 
   <Identity Name="@IDENTITY_NAME@" Publisher="@PUBLISHER@" Version="@VERSION@" ProcessorArchitecture="x64" />
 
-  <!-- DisplayName must be a name reserved in Partner Center, exactly: "Flockswitch". -->
+  <!-- Keep the reserved 1.x Store name and product identity. -->
   <Properties>
     <DisplayName>Flockswitch</DisplayName>
     <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
@@ -37,7 +37,7 @@
     <Application Id="flockswitch" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="Flockswitch"
-        Description="One mouse button moves your Logitech mouse and keyboard to another computer together"
+        Description="Share one mouse and keyboard between computers over the network, with Logitech Easy-Switch buttons and channels"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png" />
@@ -49,7 +49,7 @@
         <desktop:Extension Category="windows.startupTask" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="tray --login">
           <desktop:StartupTask TaskId="flockswitch" Enabled="true" DisplayName="flockswitch" />
         </desktop:Extension>
-        <!-- `flockswitch list` and the other commands from a terminal. -->
+        <!-- `flockswitch settings` and the other commands from a terminal. -->
         <uap3:Extension Category="windows.appExecutionAlias" Executable="flockswitch.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
             <desktop:ExecutionAlias Alias="flockswitch.exe" />
@@ -59,9 +59,11 @@
     </Application>
   </Applications>
 
-  <!-- A desktop app: talks HID++ to the receiver and Bluetooth devices, shows a tray icon,
-       registers keyboard shortcuts and starts its own settings window. -->
+  <!-- A desktop app: talks HID++ to Logitech receivers, shares the mouse and keyboard over
+       the local network, shows a tray icon, registers keyboard shortcuts and starts its
+       own settings window. -->
   <Capabilities>
+    <Capability Name="privateNetworkClientServer" />
     <rescap:Capability Name="runFullTrust" />
   </Capabilities>
 </Package>

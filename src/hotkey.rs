@@ -19,7 +19,7 @@ pub fn parse(text: &str) -> Result<HotKey> {
     text.parse::<HotKey>().map_err(|e| anyhow!("shortcut '{text}': {e}"))
 }
 
-/// How a shortcut is shown: ⌃⌥1 on macOS, Ctrl+Alt+1 on Windows.
+/// How a shortcut is shown: ⌃⌥L on macOS, Ctrl+Alt+L on Windows.
 pub fn display(text: &str) -> String {
     let parts: Vec<&str> = text.split('+').map(str::trim).collect();
     let has = |names: &[&str]| parts.iter().any(|p| names.iter().any(|n| p.eq_ignore_ascii_case(n)));

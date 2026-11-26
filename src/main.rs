@@ -1,4 +1,4 @@
-//! flockswitch — use a spare Logitech mouse button as an Easy-Switch key that moves the
+//! flockswitch - use a spare Logitech mouse button as an Easy-Switch key that moves the
 //! mouse and its companion keyboard to another computer together.
 
 // No console window when started from Explorer or at login; command-line use attaches
@@ -14,6 +14,7 @@ mod hidpp;
 mod hotkey;
 mod i18n;
 mod icon;
+mod net;
 mod overlay;
 mod overlay_render;
 mod settings_ui;
@@ -32,18 +33,18 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 const USAGE: &str = "\
-flockswitch — move your Logitech mouse and keyboard to another computer with one button
+flockswitch - share input over the network or switch Logitech channels
 
 USAGE:
     flockswitch              start in the notification area (default)
     flockswitch settings     open the settings window
     flockswitch run          run without an icon, logging to the terminal
-    flockswitch list         show devices, channels and the trigger button
-    flockswitch switch <N>   move all following devices to channel N (1-3) now
+    flockswitch list         show Logitech devices and channels
+    flockswitch switch <N>   switch following devices to channel N (1-3)
     flockswitch config       print the config file path (created on first use)
-    flockswitch quit         ask the running flockswitch to give the button back and quit
+    flockswitch quit         ask the running flockswitch to quit
     flockswitch uninstall    remove start-at-login and all settings (also quits the running
-                            flockswitch), then delete the program file/folder yourself
+                             flockswitch), then delete the program file/folder yourself
     flockswitch set <key> <value>
                             change a setting, e.g.
                               set buttons wheel_mode,gesture   buttons that switch (also: middle)
@@ -52,6 +53,9 @@ USAGE:
                               set gesture.channels 3           one button: wheel_mode / gesture / middle
                               set follow all        devices that move along (all, none, or B366,MX Keys)
                               set trigger_device auto
+                              set network.on true             share over the network
+                              set network.name \"My Mac\"      this computer's name
+                              set network.port 47160          the port
                               set enabled true|false
                               set keep_wheel_mode true         put the wheel back (ratchet or free) when the
                                                     mouse comes back (with the wheel_mode button)
@@ -61,15 +65,16 @@ USAGE:
                               set edge.right 2      the channel of that edge (left/right/top/bottom; none = off)
                               set edge.dwell 500    how long the cursor must rest there (ms)
                               set edge.cursor true  put the cursor at that edge when the mouse comes back
-                              set edge.control true wait only while Ctrl is held
+                              set edge.control true wait only while Control is held
                               set edge.anim ring    none, ring, semicircle, bar, pulse, laser, vortex, scan, liquid, random
-                              set edge.ring.color #FFCC00      each effect's own colour (ring, semicircle, bar,
-                                                    pulse, laser, vortex, scan, liquid)
+                              set edge.ring.color #FFCC00      each effect's own colour (ring, semicircle, bar, pulse,
+                                                               laser, vortex, scan, liquid)
                               set edge.ring.size 125           its size in percent (50-200)
                               set edge.bar.direction both      clockwise, counterclockwise, both (ring, semicircle, bar)
                               set edge.ring.shrink true        shrink instead of draining (ring, semicircle)
-                              set edge.anim_color #FFCC00      also anim_size, anim_direction, anim_shrink: the
-                                                    chosen effect (every effect with none or random)
+                              set edge.anim_color #FFCC00      the same for the chosen effect (every effect when none
+                                                               or random is chosen); also anim_size, anim_direction,
+                                                               anim_shrink
                               set haptics.switch true          a pulse as the mouse leaves (mice with a motor)
                               set haptics.arrive true          a pulse when the mouse is back
                               set haptics.edge true            pulses while waiting at a screen edge
@@ -85,15 +90,18 @@ USAGE:
                               set locate.arrival true          when the mouse arrives from another computer
                               set locate.shake true            when the mouse is shaken
                               set locate.shake_time 1000       how long it must be shaken (ms, 200-5000)
-                              set locate.shake_key ctrl        only while this key is held (none, ctrl, alt, shift)
+                              set locate.shake_key ctrl        a key held while shaking (none, ctrl, alt, shift)
                               set check_updates true           look for a new version at start and daily
-                              set auto_update true             install it by itself and start again
+                              set auto_update true             install it and restart (false = only show it)
     flockswitch help
 
 Set RUST_LOG=debug for more detail.";
 
 /// Port used only as a lock so two copies never react to the same button press.
+/// Keep the 1.x single-instance port so upgrades share one running app.
 const INSTANCE_PORT: u16 = 47_851;
+/// The program's name: login item, message boxes, settings header.
+pub const APP_NAME: &str = "flockswitch";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -255,7 +263,11 @@ fn run_headless() -> Result<()> {
     let s = shared.clone();
     ctrlc::set_handler(move || s.stop.store(true, Ordering::SeqCst))?;
     edge::spawn(shared.clone());
-    Engine::new(shared)?.run()
+    let network = net::spawn(shared.clone());
+    let result = Engine::new(shared.clone()).and_then(|mut engine| engine.run());
+    shared.stop.store(true, Ordering::SeqCst);
+    let _ = network.join();
+    result
 }
 
 fn list() -> Result<()> {
@@ -263,8 +275,6 @@ fn list() -> Result<()> {
     let mut engine = Engine::new(Arc::new(Shared::new(cfg.clone())))?;
     engine.scan()?;
     engine.describe();
-    let kind = if store::packaged() { "Microsoft Store package" } else { "not packaged" };
-    println!("flockswitch {} ({kind})", env!("CARGO_PKG_VERSION"));
     println!();
     for d in engine.devices().to_vec() {
         let ep = engine.endpoint(d.endpoint);
@@ -349,7 +359,7 @@ fn already_running(login: bool) -> Option<std::net::TcpListener> {
 /// A message the user sees, as a dialog: the app usually has no console.
 pub fn show_message(text: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONWARNING, MB_OK};
-    let (text, title) = (wide(text), wide("flockswitch"));
+    let (text, title) = (wide(text), wide(APP_NAME));
     // Safety: both strings are zero-terminated and outlive the call.
     unsafe {
         MessageBoxW(std::ptr::null_mut(), text.as_ptr(), title.as_ptr(), MB_OK | MB_ICONWARNING);

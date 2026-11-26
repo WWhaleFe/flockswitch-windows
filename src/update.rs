@@ -254,7 +254,7 @@ mod github {
             if installed {
                 n.starts_with("flockswitch-setup-") && n.ends_with(".exe")
             } else {
-                n.contains("windows-portable") && n.ends_with(".zip")
+                n.starts_with("flockswitch-windows-portable-") && n.ends_with(".zip")
             }
         })
     }
@@ -420,6 +420,7 @@ mod tests {
     fn versions() {
         assert!(is_newer("1.6.0", "1.5.0"));
         assert!(is_newer("1.10.0", "1.9.9"));
+        assert!(is_newer("2.0.0", "1.10.0"));
         assert!(!is_newer("1.6.0", "1.6.0"));
         assert!(!is_newer("1.5.9", "1.6.0"));
         assert!(!is_newer("1.6", "1.6.0"));

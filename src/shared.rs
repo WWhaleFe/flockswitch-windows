@@ -40,7 +40,7 @@ pub struct Status {
     /// This computer's channel (1-based): the one the master mouse was on when last
     /// seen here. Kept while the mouse is away.
     pub channel: Option<u8>,
-    /// The latest look for a new version (the tray menu offers it).
+    /// New-version check and download, shown in the menu.
     pub update: crate::update::UpdateState,
 }
 
@@ -56,7 +56,7 @@ pub struct StatusFile {
     /// Trigger buttons the master mouse has (control IDs).
     #[serde(default)]
     pub buttons: Vec<u16>,
-    /// Version of the running tray app (empty before 0.3.5).
+    /// Version of the running menu-bar app (empty before 0.3.5).
     #[serde(default)]
     pub version: String,
     /// Channels whose keyboard shortcut could not be registered.
@@ -64,11 +64,12 @@ pub struct StatusFile {
     pub hotkeys_failed: Vec<u8>,
     /// This computer's channel (1-based), for the 이동할 채널 rows.
     #[serde(default)]
-    pub channel: Option<u8>,
+    pub locate_key_failed: bool,
     /// A newer version the tray app's own look found, so the settings window offers it
     /// before Check now is pressed.
     #[serde(default)]
     pub update_available: Option<String>,
+    pub channel: Option<u8>,
 }
 
 fn status_path() -> std::path::PathBuf {
@@ -94,7 +95,7 @@ pub fn uninstall_request_path() -> std::path::PathBuf {
     Config::path().with_file_name("uninstall.request")
 }
 
-/// `flockswitch quit` (used by the installer before an upgrade) asks the
+/// `flockswitch quit` (or a newer copy taking over) asks the
 /// running tray app to hand the button back and quit by creating this file.
 pub fn quit_request_path() -> std::path::PathBuf {
     Config::path().with_file_name("quit.request")
@@ -317,6 +318,7 @@ impl Shared {
         let mut current = self.config.lock().unwrap();
         let mut next = current.clone();
         change(&mut next);
+        next.resolve_edge_owner(&current);
         next.validate()?;
         next.save()?;
         crate::i18n::set_language(&next.language);
@@ -338,7 +340,7 @@ impl Shared {
             .map_err(anyhow::Error::from)
             .and_then(|t| Config::parse(&t))
             .and_then(|c| c.validate().map(|_| c));
-        // Lock order: config, then config_mtime — the same as update_config.
+        // Lock order: config, then config_mtime - the same as update_config.
         let mut current = self.config.lock().unwrap();
         let mut seen = self.config_mtime.lock().unwrap();
         if now == *seen {
@@ -346,7 +348,13 @@ impl Shared {
         }
         *seen = now;
         match parsed {
-            Ok(cfg) => {
+            Ok(mut cfg) => {
+                let edges_on = cfg.edges.on;
+                cfg.resolve_edge_owner(&current);
+                if cfg.edges.on != edges_on {
+                    if let Err(e) = cfg.save() { log::warn!("save edge ownership: {e:#}"); }
+                    *seen = config_mtime();
+                }
                 crate::i18n::set_language(&cfg.language);
                 *current = cfg;
                 self.version.fetch_add(1, Ordering::SeqCst);
@@ -364,6 +372,12 @@ impl Shared {
         let mut st = self.status.lock().unwrap();
         change(&mut st);
         let file = StatusFile {
+            version: env!("CARGO_PKG_VERSION").into(),
+            locate_key_failed: st.hotkeys_failed.contains(&crate::hotkey::LOCATE),
+            update_available: match &st.update {
+                crate::update::UpdateState::Available(v) | crate::update::UpdateState::InstallFailed(v) => Some(v.clone()),
+                _ => None,
+            },
             trigger: st.trigger.clone(),
             trigger_key: st.trigger_key.clone(),
             last_switch: st.last_switch.clone(),
@@ -371,11 +385,6 @@ impl Shared {
             buttons: st.buttons.clone(),
             hotkeys_failed: st.hotkeys_failed.clone(),
             channel: st.channel,
-            version: env!("CARGO_PKG_VERSION").into(),
-            update_available: match &st.update {
-                crate::update::UpdateState::Available(v) | crate::update::UpdateState::InstallFailed(v) => Some(v.clone()),
-                _ => None,
-            },
         };
         drop(st);
         // Only touch the disk when something the settings window shows has changed.
