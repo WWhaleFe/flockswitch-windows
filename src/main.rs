@@ -126,10 +126,16 @@ fn main() {
     } else {
         None
     };
-    Config::migrate_old_name();
+    // Screenshot mode (FLOCKSWITCH_SHOTS) never touches the real settings folder.
+    let shots = args.first().map(String::as_str) == Some("settings") && settings_ui::shots_dir().is_some();
+    if !shots {
+        Config::migrate_old_name();
+    }
     // The settings window has no console when started from the menu: log to its own
     // file so a window that fails to open (graphics drivers) leaves a trace.
-    let log_file = if tray_mode {
+    let log_file = if shots {
+        None
+    } else if tray_mode {
         Some(log_path())
     } else if args.first().map(String::as_str) == Some("settings") {
         Some(log_path().with_file_name("settings.log"))
@@ -167,7 +173,8 @@ fn real_main(args: &[String]) -> Result<()> {
         "settings" => {
             // One settings window at a time. Opening it again knocks on the open
             // window's port (one byte only for `update`), which brings that window to the front.
-            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], INSTANCE_PORT + 1));
+            let port = if settings_ui::shots_dir().is_some() { 0 } else { INSTANCE_PORT + 1 };
+            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
             let fallback = std::env::var(settings_ui::RENDERER_ENV).is_ok();
             // A fallback relaunch waits for the failed window's process to let go.
             let tries = if fallback { 30 } else { 1 };
