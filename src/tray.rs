@@ -40,7 +40,7 @@ struct Ui {
 pub fn run(shared: Arc<Shared>) -> Result<()> {
     // Ctrl+C, logout or shutdown: let the loop below stop the threads and exit.
     let s = shared.clone();
-    ctrlc::set_handler(move || s.stop.store(true, std::sync::atomic::Ordering::SeqCst))?;
+    ctrlc::set_handler(move || s.request_stop())?;
     // The settings window and a newer copy read the running version from here.
     shared.set_status(|_| {});
     let engine = spawn_engine(shared.clone());
@@ -88,7 +88,7 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
         while let Ok(ev) = MenuEvent::receiver().try_recv() {
             if let Some(action) = ui.actions.get(&ev.id).cloned() {
                 if ui.handle(action) {
-                    shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+                    shared.request_stop();
                 }
             }
         }
@@ -98,16 +98,16 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
         if request.exists() {
             let _ = std::fs::remove_file(&request);
             ui.uninstall_requested = true;
-            shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            shared.request_stop();
         }
         let request = crate::shared::quit_request_path();
         if request.exists() {
             let _ = std::fs::remove_file(&request);
-            shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            shared.request_stop();
         }
         let destroyed = matches!(event, Event::LoopDestroyed);
         if shared.stopped() || destroyed {
-            shared.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+            shared.request_stop();
             if let Some(h) = network.take() {
                 let _ = h.join();
             }

@@ -1,10 +1,11 @@
 //! Wake from sleep and unlock of the session: the network thread looks for the other
 //! computers again at once instead of waiting for its own timers.
 //!
-//! A hidden window of its own (on its own thread, with its own message loop) receives
+//! A hidden window on the network input thread receives
 //! WM_POWERBROADCAST (resume) and WM_WTSSESSION_CHANGE (unlock) and sets a flag.
 
-use std::sync::{atomic::{AtomicBool, Ordering}, Once};
+use std::sync::atomic::{AtomicBool, Ordering};
+use windows_sys::Win32::Foundation::{ERROR_CLASS_ALREADY_EXISTS, HWND};
 
 static PENDING: AtomicBool = AtomicBool::new(false);
 
@@ -44,63 +45,58 @@ unsafe extern "system" fn window_proc(
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
-/// Starts listening once per process, for both tray and headless network startup.
-pub fn start() {
-    static START: Once = Once::new();
-    START.call_once(start_thread);
-}
+/// Owned and dropped by the input thread, whose message loop dispatches the notices.
+pub struct Listener(HWND);
 
-fn start_thread() {
-    let spawned = std::thread::Builder::new().name("wake".into()).spawn(|| {
-        if let Err(e) = message_loop() {
-            log::warn!("wake and unlock notices unavailable: {e}");
-        }
-    });
-    if let Err(e) = spawned {
-        log::warn!("wake and unlock notices unavailable: {e}");
-    }
-}
-
-fn message_loop() -> Result<(), String> {
-    use std::ptr::{null, null_mut};
-    use windows_sys::Win32::{
-        System::{LibraryLoader::GetModuleHandleW, RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION}},
-        UI::WindowsAndMessaging::*,
-    };
-    let class: Vec<u16> = "FlockswitchWake\0".encode_utf16().collect();
-    // Safety: plain Win32 calls; the window is only used on this thread.
-    unsafe {
-        let instance = GetModuleHandleW(null());
-        let class_info = WNDCLASSW {
-            style: 0,
-            lpfnWndProc: Some(window_proc),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hInstance: instance,
-            hIcon: null_mut(),
-            hCursor: null_mut(),
-            hbrBackground: null_mut(),
-            lpszMenuName: null(),
-            lpszClassName: class.as_ptr(),
+impl Listener {
+    pub fn new() -> Result<Self, String> {
+        use std::ptr::{null, null_mut};
+        use windows_sys::Win32::{
+            System::{LibraryLoader::GetModuleHandleW, RemoteDesktop::{WTSRegisterSessionNotification, NOTIFY_FOR_THIS_SESSION}},
+            UI::WindowsAndMessaging::*,
         };
-        if RegisterClassW(&class_info) == 0 {
-            return Err("cannot register the window class".into());
-        }
-        // A top-level window that is never shown: message-only windows get no power broadcasts.
-        let hwnd = CreateWindowExW(0, class.as_ptr(), class.as_ptr(), WS_OVERLAPPED, 0, 0, 0, 0, null_mut(), null_mut(), instance, null());
-        if hwnd.is_null() {
-            return Err("cannot create the window".into());
-        }
-        if WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) == 0 {
-            log::warn!("unlock notices unavailable (WTSRegisterSessionNotification failed); wake notices still work");
-        }
-        let mut msg: MSG = std::mem::zeroed();
-        while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
-            TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+        let class: Vec<u16> = "FlockswitchWake\0".encode_utf16().collect();
+        // Safety: plain Win32 calls; the window is only used on this thread.
+        unsafe {
+            let instance = GetModuleHandleW(null());
+            let class_info = WNDCLASSW {
+                style: 0,
+                lpfnWndProc: Some(window_proc),
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: instance,
+                hIcon: null_mut(),
+                hCursor: null_mut(),
+                hbrBackground: null_mut(),
+                lpszMenuName: null(),
+                lpszClassName: class.as_ptr(),
+            };
+            if RegisterClassW(&class_info) == 0
+                && std::io::Error::last_os_error().raw_os_error() != Some(ERROR_CLASS_ALREADY_EXISTS as i32)
+            {
+                return Err("cannot register the window class".into());
+            }
+            // A top-level window that is never shown: message-only windows get no power broadcasts.
+            let hwnd = CreateWindowExW(0, class.as_ptr(), class.as_ptr(), WS_OVERLAPPED, 0, 0, 0, 0, null_mut(), null_mut(), instance, null());
+            if hwnd.is_null() {
+                return Err("cannot create the window".into());
+            }
+            if WTSRegisterSessionNotification(hwnd, NOTIFY_FOR_THIS_SESSION) == 0 {
+                log::warn!("unlock notices unavailable (WTSRegisterSessionNotification failed); wake notices still work");
+            }
+            Ok(Self(hwnd))
         }
     }
-    Ok(())
+}
+
+impl Drop for Listener {
+    fn drop(&mut self) {
+        // Safety: the window was created on this thread and no longer receives notices.
+        unsafe {
+            windows_sys::Win32::System::RemoteDesktop::WTSUnRegisterSessionNotification(self.0);
+            windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(self.0);
+        }
+    }
 }
 
 #[cfg(test)]

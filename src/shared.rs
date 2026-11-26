@@ -4,6 +4,7 @@ use crate::config::Config;
 use crate::device::Reporting;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use flockswitch::idle::Signal;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 
@@ -279,7 +280,9 @@ pub struct Shared {
     version: AtomicU64,
     status: Mutex<Status>,
     last_status_file: Mutex<StatusFile>,
-    pub stop: AtomicBool,
+    stop: AtomicBool,
+    pub control_changed: Signal,
+    pub edge_changed: Signal,
     /// Channel asked for by a keyboard shortcut, for the engine to act on (0 = none).
     switch_request: AtomicU8,
     /// Haptic waveform the edge watcher asks the engine to play on the mouse (+1; 0 = none).
@@ -298,6 +301,8 @@ impl Shared {
             status: Mutex::new(Status::default()),
             last_status_file: Mutex::new(StatusFile { online: vec!["-".into()], ..StatusFile::default() }),
             stop: AtomicBool::new(false),
+            control_changed: Signal::default(),
+            edge_changed: Signal::default(),
             switch_request: AtomicU8::new(0),
             haptic_request: AtomicU8::new(0),
             locate_request: AtomicBool::new(false),
@@ -324,8 +329,14 @@ impl Shared {
         crate::i18n::set_language(&next.language);
         *current = next;
         *self.config_mtime.lock().unwrap() = config_mtime();
-        self.version.fetch_add(1, Ordering::SeqCst);
+        self.config_changed();
         Ok(())
+    }
+
+    fn config_changed(&self) {
+        self.version.fetch_add(1, Ordering::SeqCst);
+        self.control_changed.notify();
+        self.edge_changed.notify();
     }
 
     /// Picks up edits made to config.toml by hand. An invalid edit is reported once and
@@ -357,7 +368,7 @@ impl Shared {
                 }
                 crate::i18n::set_language(&cfg.language);
                 *current = cfg;
-                self.version.fetch_add(1, Ordering::SeqCst);
+                self.config_changed();
                 log::info!("settings file changed, reloaded");
             }
             Err(e) => log::warn!("settings file has an error, keeping current settings: {e:#}"),
@@ -370,7 +381,15 @@ impl Shared {
 
     pub fn set_status(&self, change: impl FnOnce(&mut Status)) {
         let mut st = self.status.lock().unwrap();
+        let before = (st.trigger.is_some(), st.channel, st.last_switch.clone());
+        let update = st.update.clone();
         change(&mut st);
+        if before != (st.trigger.is_some(), st.channel, st.last_switch.clone()) {
+            self.edge_changed.notify();
+        }
+        if update != st.update {
+            self.control_changed.notify();
+        }
         let file = StatusFile {
             version: env!("CARGO_PKG_VERSION").into(),
             locate_key_failed: st.hotkeys_failed.contains(&crate::hotkey::LOCATE),
@@ -416,6 +435,7 @@ impl Shared {
     /// The locate shortcut was pressed: the screen watcher shows the cursor.
     pub fn request_locate(&self) {
         self.locate_request.store(true, Ordering::SeqCst);
+        self.edge_changed.notify();
     }
 
     pub fn take_locate_request(&self) -> bool {
@@ -425,11 +445,41 @@ impl Shared {
     pub fn stopped(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
     }
+
+    pub fn request_stop(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+        self.control_changed.notify();
+        self.edge_changed.notify();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn configuration_locate_and_shutdown_wake_the_waiters() {
+        let shared = Shared::new(Config::default());
+        let control = shared.control_changed.revision();
+        let edge = shared.edge_changed.revision();
+        shared.config_changed();
+        assert_eq!(shared.version(), 1);
+        assert_ne!(shared.control_changed.revision(), control);
+        assert_ne!(shared.edge_changed.revision(), edge);
+
+        let edge = shared.edge_changed.revision();
+        shared.request_locate();
+        assert_ne!(shared.edge_changed.revision(), edge);
+        assert!(shared.take_locate_request());
+        assert!(!shared.take_locate_request());
+
+        let control = shared.control_changed.revision();
+        let edge = shared.edge_changed.revision();
+        shared.request_stop();
+        assert!(shared.stopped());
+        assert_ne!(shared.control_changed.revision(), control);
+        assert_ne!(shared.edge_changed.revision(), edge);
+    }
 
     #[test]
     fn haptic_preview_requests() {

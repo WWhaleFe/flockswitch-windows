@@ -12,11 +12,12 @@ use crate::config::EDGES;
 use crate::device::waveform;
 use crate::overlay;
 use crate::shared::Shared;
+use flockswitch::idle::{cursor_wait, WORKER_STACK};
+#[cfg(test)]
+use flockswitch::idle::EDGE_POLL as POLL;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// How often the cursor is read. Reading it is cheap; 25 ms is finer than anyone moves.
-const POLL: Duration = Duration::from_millis(25);
 /// How often the engine's status (this computer's channel, is the mouse here) is read.
 const STATUS_POLL: Duration = Duration::from_millis(300);
 /// How often the display arrangement is re-read.
@@ -29,9 +30,6 @@ const INSET: f64 = 24.0;
 pub(crate) const HAPTIC_TICK: Duration = Duration::from_millis(150);
 /// A pulse takes a moment to play; Change Host right after would cut it short.
 const FINAL_PULSE: Duration = Duration::from_millis(150);
-/// How often the cursor is read while shaking is being watched for. Real shakes turn
-/// every 60-150 ms; at the usual 25 ms a stroke is only two or three samples long.
-const SHAKE_POLL: Duration = Duration::from_millis(10);
 /// A turn of a shake comes after at least this many points of travel one way. Quick
 /// shakes by hand are short strokes (30-100 points), well under the 80 this once asked.
 const SHAKE_MIN_STROKE: f64 = 30.0;
@@ -259,6 +257,7 @@ pub fn available() -> bool {
 pub fn spawn(shared: Arc<Shared>) {
     std::thread::Builder::new()
         .name("edges".into())
+        .stack_size(WORKER_STACK)
         .spawn(move || watch(shared))
         .expect("spawning the edge watcher");
 }
@@ -273,8 +272,10 @@ fn watch(shared: Arc<Shared>) {
         log::info!("edge switching: not available on this computer");
         return;
     }
-    let mut cfg = shared.config();
+    let mut observed = shared.edge_changed.revision();
     let mut version = shared.version();
+    let mut cfg = shared.config();
+    let mut wait = Some(Duration::ZERO);
     let mut announced = false;
     let mut status_read: Option<Instant> = None;
     // From the engine's status: this computer's channel, whether the master mouse is
@@ -296,7 +297,9 @@ fn watch(shared: Arc<Shared>) {
     let mut shake = Shake::default();
 
     while !shared.stopped() {
-        std::thread::sleep(if cfg.locate.on && cfg.locate.on_shake { SHAKE_POLL } else { POLL });
+        shared.edge_changed.wait(observed, wait);
+        observed = shared.edge_changed.revision();
+        if shared.stopped() { break; }
         if shared.version() != version {
             version = shared.version();
             cfg = shared.config();
@@ -304,6 +307,7 @@ fn watch(shared: Arc<Shared>) {
         }
         let (logitech_active, network_active) = edge_activity(&cfg);
         let active = logitech_active || network_active;
+        wait = cursor_wait(active, cfg.locate.on && cfg.locate.on_shake);
         if !announced {
             announced = true;
             if logitech_active {
@@ -317,7 +321,7 @@ fn watch(shared: Arc<Shared>) {
                 log::info!("edges: on, but no edge has a channel");
             }
         }
-        if status_read.is_none_or(|t| t.elapsed() >= STATUS_POLL) {
+        if !active || status_read.is_none_or(|t| t.elapsed() >= STATUS_POLL) {
             let first = status_read.is_none();
             status_read = Some(Instant::now());
             let st = shared.status();

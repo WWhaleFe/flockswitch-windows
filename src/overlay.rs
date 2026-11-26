@@ -8,9 +8,9 @@
 use crate::config::{parse_color, Edge, Edges, Locate, DEFAULT_EFFECT_COLOR};
 use crate::edge::Rect;
 use crate::overlay_render as render;
+use flockswitch::idle::{WorkerMailbox, WORKER_IDLE, WORKER_STACK};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
-use std::sync::OnceLock;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 const FRAME: Duration = Duration::from_micros(16_667);
@@ -22,7 +22,7 @@ enum Command {
 }
 
 static READY: AtomicBool = AtomicBool::new(false);
-static COMMANDS: OnceLock<Sender<Command>> = OnceLock::new();
+static COMMANDS: WorkerMailbox<Command> = WorkerMailbox::new();
 
 /// Says this process has an interface and may draw. Without it (`flockswitch run`)
 /// nothing is drawn.
@@ -39,18 +39,19 @@ fn components(text: &str) -> [u8; 3] {
 /// nothing to draw, and no thread is kept for it until there is.
 fn send(command: Command) {
     // Nothing to take away before anything was drawn.
-    if !READY.load(Ordering::SeqCst) || (matches!(command, Command::EdgeEnd) && COMMANDS.get().is_none()) {
+    if !READY.load(Ordering::SeqCst) {
         return;
     }
-    let commands = COMMANDS.get_or_init(|| {
-        let (commands, received) = channel();
-        let started = std::thread::Builder::new().name("overlay".into()).spawn(move || run(received));
-        if let Err(e) = started {
-            log::warn!("overlay: cannot start its thread: {e}");
-        }
-        commands
-    });
-    let _ = commands.send(command);
+    if matches!(command, Command::EdgeEnd) {
+        COMMANDS.send_if_running(command);
+        return;
+    }
+    if let Err(e) = COMMANDS.send(command, |received| {
+        std::thread::Builder::new().name("overlay".into()).stack_size(WORKER_STACK)
+            .spawn(move || run(received)).map(|_| ())
+    }) {
+        log::warn!("overlay: cannot start its thread: {e}");
+    }
 }
 
 /// Starts the countdown on `edge` of `display`, `elapsed` into the wait of `duration`,
@@ -157,11 +158,17 @@ fn run(commands: Receiver<Command>) {
         let received = if effects.animating() {
             commands.recv_timeout(next_frame.saturating_duration_since(Instant::now()))
         } else {
-            commands.recv().map_err(|_| RecvTimeoutError::Disconnected)
+            commands.recv_timeout(WORKER_IDLE)
         };
         match received {
             Ok(command) => effects.handle(command),
             Err(RecvTimeoutError::Disconnected) => return,
+            Err(RecvTimeoutError::Timeout) if !effects.animating() => {
+                match COMMANDS.take_or_retire(&commands) {
+                    Some(command) => effects.handle(command),
+                    None => return,
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {}
         }
         while let Ok(command) = commands.try_recv() {

@@ -12,6 +12,7 @@
 //!   from this copy (see `already_running` in main.rs).
 
 use crate::shared::Shared;
+use flockswitch::idle::update_wait;
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -127,22 +128,18 @@ pub fn install_into(shared: &Shared, version: String) {
 pub fn spawn_periodic(shared: Arc<Shared>) {
     std::thread::spawn(move || {
         let started = Instant::now();
-        let mut last: Option<Instant> = None;
+        let mut next = started + FIRST_CHECK;
         while !shared.stopped() {
-            std::thread::sleep(Duration::from_secs(1));
-            let due = match last {
-                None => started.elapsed() >= FIRST_CHECK,
-                Some(at) => at.elapsed() >= CHECK_INTERVAL,
-            };
-            // The settings are copied only once a look is due, not every second.
-            if !due {
-                continue;
-            }
+            let observed = shared.control_changed.revision();
+            if shared.stopped() { break; }
             let cfg = shared.config();
-            if !cfg.check_updates || matches!(shared.status().update, UpdateState::Installing(_)) {
+            let installing = matches!(shared.status().update, UpdateState::Installing(_));
+            let wait = update_wait(cfg.check_updates, installing, next.saturating_duration_since(Instant::now()));
+            if wait != Some(Duration::ZERO) {
+                shared.control_changed.wait(observed, wait);
                 continue;
             }
-            last = Some(Instant::now());
+            next = Instant::now() + CHECK_INTERVAL;
             if let UpdateState::Available(v) = check_into(&shared) {
                 if cfg.auto_update {
                     install_into(&shared, v);

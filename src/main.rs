@@ -31,7 +31,6 @@ use config::Config;
 use engine::Engine;
 use shared::Shared;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 const USAGE: &str = "\
@@ -265,11 +264,11 @@ fn run_headless() -> Result<()> {
     }
     let shared = Arc::new(Shared::new(cfg));
     let s = shared.clone();
-    ctrlc::set_handler(move || s.stop.store(true, Ordering::SeqCst))?;
+    ctrlc::set_handler(move || s.request_stop())?;
     edge::spawn(shared.clone());
     let network = net::spawn(shared.clone());
     let result = Engine::new(shared.clone()).and_then(|mut engine| engine.run());
-    shared.stop.store(true, Ordering::SeqCst);
+    shared.request_stop();
     let _ = network.join();
     result
 }

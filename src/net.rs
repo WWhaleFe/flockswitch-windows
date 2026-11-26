@@ -6,6 +6,7 @@ use crate::{
 };
 use flock_net::{keymap, InputEvent, MouseButton, NetConfig, Os, Platform, Rect, Role, Service, Side};
 use flockswitch::key_rules::{echoed, Outbox, Rules};
+use flockswitch::idle::{CONFIG_POLL, NETWORK_POLL, WORKER_STACK};
 use serde_json::{json, Value};
 use std::{
     cell::RefCell,
@@ -194,37 +195,50 @@ fn runtime_config(shared: &Shared) -> NetConfig {
 }
 
 pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
-    crate::wake::start();
     thread::Builder::new()
         .name("network".into())
         .spawn(move || {
-            let platform = match WindowsPlatform::new() {
-                Ok(p) => Arc::new(p),
-                Err(e) => {
-                    log::error!("initialize network input: {e:#}");
-                    return;
-                }
-            };
+            restore_cursors();
+            let mut platform: Option<Arc<WindowsPlatform>> = None;
             let mut service: Option<Arc<Service>> = None;
             let mut mode = String::from("local");
             let mut previous: Option<NetConfig> = None;
             let mut retry = Instant::now() - Duration::from_secs(5);
             let outbox = Arc::new(Mutex::new(Outbox::new(key_rules_request_path())));
             let mut sent_keys: Option<(Rules, Instant)> = None;
+            let mut cached: Option<(u64, NetConfig, bool)> = None;
             while !shared.stopped() {
+                let observed = shared.control_changed.revision();
+                if shared.stopped() { break; }
                 shared.reload_if_edited();
                 let version = shared.version();
-                let config = runtime_config(&shared);
-                platform.edges_allowed.store(shared.config().network_edges_allowed(), Ordering::Release);
+                if cached.as_ref().is_none_or(|(v, _, _)| *v != version) {
+                    cached = Some((version, runtime_config(&shared), shared.config().network_edges_allowed()));
+                }
+                let (_, config, edges_allowed) = cached.as_ref().unwrap();
+                if let Some(p) = &platform {
+                    p.edges_allowed.store(*edges_allowed, Ordering::Release);
+                }
                 if !config.on {
                     LIVE.lock().unwrap().take();
                     mode = "local".into();
                     if let Some(s) = service.take() {
                         s.stop();
                     }
+                    // Dropping the adapter joins the hook thread and unregisters wake notices.
+                    platform.take();
                 } else {
                     if service.is_none() && retry.elapsed() >= Duration::from_secs(5) {
                         retry = Instant::now();
+                        let input = match WindowsPlatform::new() {
+                            Ok(p) => Arc::new(p),
+                            Err(e) => {
+                                log::error!("initialize network input: {e:#}");
+                                shared.control_changed.wait(observed, Some(CONFIG_POLL));
+                                continue;
+                            }
+                        };
+                        input.edges_allowed.store(*edges_allowed, Ordering::Release);
                         let paired = shared.clone();
                         let unpaired = shared.clone();
                         let changed = shared.clone();
@@ -284,12 +298,13 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                             }),
                             ..flock_net::Hooks::default()
                         };
-                        match Service::start(config.clone(), platform.clone(), hooks) {
+                        match Service::start(config.clone(), input.clone(), hooks) {
                             Ok(s) => {
                                 let s = Arc::new(s);
                                 *LIVE.lock().unwrap() =
                                     Some(Live { service: s.clone(), config: config.clone() });
                                 service = Some(s);
+                                platform = Some(input);
                             }
                             Err(e) => {
                                 log::error!("start network: {e:#}");
@@ -317,7 +332,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                 let _ = flock_net::write_status(config_dir(), &status);
                             }
                         }
-                    } else if previous.as_ref() != Some(&config) {
+                    } else if previous.as_ref() != Some(config) {
                         if let Some(s) = &service {
                             let _ = s.update_config(config.clone());
                             if let Some(live) = LIVE.lock().unwrap().as_mut() {
@@ -355,12 +370,16 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                         }
                     }
                 }
-                previous = Some(config);
-                for _ in 0..5 {
+                if previous.as_ref() != Some(config) {
+                    previous = Some(config.clone());
+                }
+                let running = service.is_some();
+                for _ in 0..if running { 5 } else { 1 } {
+                    let observed = shared.control_changed.revision();
                     if shared.stopped() || shared.version() != version {
                         break;
                     }
-                    thread::sleep(Duration::from_millis(50));
+                    shared.control_changed.wait(observed, Some(if running { NETWORK_POLL } else { CONFIG_POLL }));
                     // Woke from sleep or unlocked: look for the other computers again now.
                     if crate::wake::take() {
                         if let Some(s) = &service {
@@ -387,7 +406,9 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
             if let Some(s) = service {
                 s.stop();
             }
-            platform.stop_capture();
+            if let Some(platform) = platform {
+                platform.stop_capture();
+            }
         })
         .expect("spawning network service")
 }
@@ -545,10 +566,14 @@ impl WindowsPlatform {
         let (ready, initialized) = mpsc::sync_channel(1);
         let handle = thread::Builder::new()
             .name("network-input-hooks".into())
+            .stack_size(WORKER_STACK)
             .spawn(move || unsafe {
                 // The executable manifest sets PerMonitorV2 for all native threads.
                 let mut message: MSG = std::mem::zeroed();
                 PeekMessageW(&mut message, null_mut(), 0, 0, PM_NOREMOVE);
+                let _wake = crate::wake::Listener::new().map_err(|e| {
+                    log::warn!("wake and unlock notices unavailable: {e}");
+                });
                 let module = GetModuleHandleW(null());
                 let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0);
                 let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
@@ -713,7 +738,9 @@ impl Platform for WindowsPlatform {
         }
     }
     fn inject(&self, event: &InputEvent) {
-        let mut inputs = Vec::with_capacity(2);
+        let mut storage = [INPUT::default(); 2];
+        let mut count = 0;
+        let mut push = |input| { storage[count] = input; count += 1; };
         match *event {
             InputEvent::Motion { dx, dy } => {
                 let Some((x, y)) = crate::edge::platform::cursor() else {
@@ -725,7 +752,7 @@ impl Platform for WindowsPlatform {
                 };
                 unsafe {
                     let normalize = flock_net::windows_input::absolute_coordinate;
-                    inputs.push(mouse_input(
+                    push(mouse_input(
                         MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
                         0,
                         normalize(
@@ -749,7 +776,7 @@ impl Platform for WindowsPlatform {
                     MouseButton::Back => (MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, 1),
                     MouseButton::Forward => (MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, 2),
                 };
-                inputs.push(mouse_input(if down { press } else { release }, data, 0, 0));
+                push(mouse_input(if down { press } else { release }, data, 0, 0));
             }
             InputEvent::Scroll { dx, dy } => {
                 let mut scroll = self.scroll.lock().unwrap();
@@ -760,7 +787,7 @@ impl Platform for WindowsPlatform {
                 ] {
                     let amount = flock_net::windows_input::wheel_units(remainder, notches);
                     if amount != 0 {
-                        inputs.push(mouse_input(flag, amount, 0, 0));
+                        push(mouse_input(flag, amount, 0, 0));
                     }
                 }
             }
@@ -769,7 +796,7 @@ impl Platform for WindowsPlatform {
                     return;
                 };
                 let vk = keymap::hid_to_windows_vk(usage);
-                inputs.push(INPUT {
+                push(INPUT {
                     r#type: INPUT_KEYBOARD,
                     Anonymous: INPUT_0 {
                         ki: KEYBDINPUT {
@@ -792,6 +819,7 @@ impl Platform for WindowsPlatform {
                 });
             }
         }
+        let inputs = &storage[..count];
         if !inputs.is_empty() {
             let sent = unsafe {
                 SendInput(
