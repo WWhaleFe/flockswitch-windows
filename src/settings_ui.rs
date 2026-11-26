@@ -514,6 +514,8 @@ struct SettingsApp {
     frames: u8,
     /// "Check now" / "Update now" from this window, done in the background.
     update: Arc<std::sync::Mutex<UpdateView>>,
+    /// The settings viewport's actual HWND, refreshed from eframe on the UI thread.
+    window_handle: Option<isize>,
     /// "Reset settings…" was pressed and waits for its confirmation.
     confirm_reset: bool,
     /// A colour being dragged in the picker; saved when the mouse button comes up.
@@ -641,6 +643,7 @@ impl SettingsApp {
             shown,
             frames: 0,
             update: Arc::default(),
+            window_handle: None,
             confirm_reset: false,
             color_draft: None,
             window_size: SizeKeeper::new(WINDOW_SIZE, WINDOW_SIZE),
@@ -684,9 +687,10 @@ impl SettingsApp {
     /// program file is free to be replaced; the Store closes it by itself.
     fn install_update(&self, ctx: &egui::Context, version: String) {
         let (view, ctx) = (self.update.clone(), ctx.clone());
+        let owner = self.window_handle;
         *view.lock().unwrap() = UpdateView { state: UpdateState::Installing(version.clone()), detail: None };
         std::thread::spawn(move || {
-            match update::install_now() {
+            match update::install_now(owner) {
                 Ok(()) => {
                     log::info!("update {version}: installing; closing the settings window");
                     std::process::exit(0);
@@ -752,7 +756,12 @@ impl eframe::App for SettingsApp {
         self.stop_recording();
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, frame: &mut eframe::Frame) {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        self.window_handle = frame.window_handle().ok().and_then(|handle| match handle.as_raw() {
+            RawWindowHandle::Win32(window) => Some(window.hwnd.get()),
+            _ => None,
+        });
         self.show(ui);
     }
 }

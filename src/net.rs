@@ -5,6 +5,7 @@ use crate::{
     shared::Shared,
 };
 use flock_net::{keymap, InputEvent, MouseButton, NetConfig, Os, Platform, Rect, Role, Service, Side};
+use flockswitch::key_rules::{echoed, Outbox, Rules};
 use serde_json::{json, Value};
 use std::{
     cell::RefCell,
@@ -39,19 +40,8 @@ fn key_rules_request_path() -> PathBuf {
 }
 
 /// Asks the running app to send `keys` to the master (a sub's edit of "OS 전환 시").
-pub fn request_key_rules(keys: &std::collections::BTreeMap<String, flock_net::DirRules>) -> anyhow::Result<()> {
-    let path = key_rules_request_path();
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, serde_json::to_vec(keys)?)?;
-    std::fs::rename(tmp, path)?;
-    Ok(())
-}
-
-fn take_key_rules_request() -> Option<std::collections::BTreeMap<String, flock_net::DirRules>> {
-    let path = key_rules_request_path();
-    let bytes = std::fs::read(&path).ok()?;
-    let _ = std::fs::remove_file(&path);
-    serde_json::from_slice(&bytes).ok()
+pub fn request_key_rules(keys: &Rules) -> anyhow::Result<()> {
+    Outbox::new(key_rules_request_path()).publish(keys)
 }
 
 /// The running service and the config it runs with, for the edge watcher.
@@ -204,6 +194,7 @@ fn runtime_config(shared: &Shared) -> NetConfig {
 }
 
 pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
+    crate::wake::start();
     thread::Builder::new()
         .name("network".into())
         .spawn(move || {
@@ -218,22 +209,13 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
             let mut mode = String::from("local");
             let mut previous: Option<NetConfig> = None;
             let mut retry = Instant::now() - Duration::from_secs(5);
+            let outbox = Arc::new(Mutex::new(Outbox::new(key_rules_request_path())));
+            let mut sent_keys: Option<(Rules, Instant)> = None;
             while !shared.stopped() {
                 shared.reload_if_edited();
                 let version = shared.version();
                 let config = runtime_config(&shared);
                 platform.edges_allowed.store(shared.config().network_edges_allowed(), Ordering::Release);
-                // Key rules edited on a sub go to its master (see `request_key_rules`).
-                if let Some(keys) = take_key_rules_request() {
-                    match &service {
-                        Some(s) => {
-                            if let Err(e) = s.send_key_rules(keys) {
-                                log::warn!("send key rules to the master: {e:#}");
-                            }
-                        }
-                        None => log::info!("key rules edited while sharing is off: kept on this computer only"),
-                    }
-                }
                 if !config.on {
                     LIVE.lock().unwrap().take();
                     mode = "local".into();
@@ -247,6 +229,8 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                         let unpaired = shared.clone();
                         let changed = shared.clone();
                         let master = shared.clone();
+                        let edited = shared.clone();
+                        let master_outbox = outbox.clone();
                         // No Logitech channels here: `switch_logitech` stays the no-op default.
                         let hooks = flock_net::Hooks {
                             on_paired: Box::new(move |peer| {
@@ -275,11 +259,27 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                 }
                             }),
                             on_master_settings: Box::new(move |settings| {
+                                // An old master snapshot must not overwrite an offline
+                                // edit that has yet to be acknowledged.
+                                let outbox = master_outbox.lock().unwrap();
+                                let pending = match outbox.latest() {
+                                    Ok(keys) => keys,
+                                    Err(e) => {
+                                        log::warn!("read pending key rules: {e:#}");
+                                        return;
+                                    }
+                                };
                                 if let Err(e) = master.update_config(|c| {
                                     settings.apply_to(&mut c.network);
+                                    if let Some(keys) = pending { c.network.keys = keys; }
                                     apply_app_settings(c, &settings.app);
                                 }) {
                                     log::error!("save master settings: {e:#}");
+                                }
+                            }),
+                            on_key_rules: Box::new(move |keys| {
+                                if let Err(e) = edited.update_config(|c| c.network.keys = keys) {
+                                    log::error!("save key rules from a sub: {e:#}");
                                 }
                             }),
                             ..flock_net::Hooks::default()
@@ -322,6 +322,35 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                             let _ = s.update_config(config.clone());
                             if let Some(live) = LIVE.lock().unwrap().as_mut() {
                                 live.config = config.clone();
+                            }
+                        }
+                    }
+                }
+                // A service command only queues a send. Keep retrying across service
+                // restarts and disconnected links until master settings echo the edit.
+                if config.on && config.role == Role::Sub {
+                    if let Some(s) = &service {
+                        let status = s.status();
+                        let connected = config.peers.iter().any(|p| p.role == Role::Master
+                            && status.peers.iter().any(|live| live.id == p.id && live.connected));
+                        if connected {
+                            let outbox = outbox.lock().unwrap();
+                            match outbox.pending() {
+                                Ok(Some(keys)) => {
+                                    if status.following.is_some() && echoed(&keys, &status.keys) {
+                                        if let Err(e) = outbox.confirm(&status.keys) {
+                                            log::warn!("confirm key rules from the master: {e:#}");
+                                        }
+                                        sent_keys = None;
+                                    } else if sent_keys.as_ref().is_none_or(|(sent, at)| *sent != keys || at.elapsed() >= Duration::from_secs(1)) {
+                                        match s.send_key_rules(keys.clone()) {
+                                            Ok(()) => sent_keys = Some((keys, Instant::now())),
+                                            Err(e) => log::warn!("send key rules to the master: {e:#}"),
+                                        }
+                                    }
+                                }
+                                Ok(None) => sent_keys = None,
+                                Err(e) => log::warn!("read pending key rules: {e:#}"),
                             }
                         }
                     }

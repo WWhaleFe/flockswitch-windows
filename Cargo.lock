@@ -1519,6 +1519,7 @@ dependencies = [
  "log",
  "memmap2",
  "png",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "sys-locale",

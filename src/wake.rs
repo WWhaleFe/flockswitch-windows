@@ -4,7 +4,7 @@
 //! A hidden window of its own (on its own thread, with its own message loop) receives
 //! WM_POWERBROADCAST (resume) and WM_WTSSESSION_CHANGE (unlock) and sets a flag.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{atomic::{AtomicBool, Ordering}, Once};
 
 static PENDING: AtomicBool = AtomicBool::new(false);
 
@@ -44,8 +44,13 @@ unsafe extern "system" fn window_proc(
     DefWindowProcW(hwnd, message, wparam, lparam)
 }
 
-/// Starts listening on a thread of its own. Call once.
+/// Starts listening once per process, for both tray and headless network startup.
 pub fn start() {
+    static START: Once = Once::new();
+    START.call_once(start_thread);
+}
+
+fn start_thread() {
     let spawned = std::thread::Builder::new().name("wake".into()).spawn(|| {
         if let Err(e) = message_loop() {
             log::warn!("wake and unlock notices unavailable: {e}");
