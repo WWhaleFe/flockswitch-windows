@@ -500,7 +500,7 @@ mod tests {
         cfg.network.role = flock_net::Role::Sub;
         cfg.network.name = "desk".into();
         cfg.network.peers.push(flock_net::PeerConfig::default());
-        cfg.network.layout.push(flock_net::layout::Cell { id: "abc123".into(), col: 1, row: 1 });
+        cfg.network.layout.push(flock_net::layout::Cell::new("abc123", 1, 1));
         let stamp = Stamp { year: 2026, month: 11, day: 27, hour: 12, minute: 0, second: 0 };
         let text = to_text(&cfg, "desk", &stamp).unwrap();
         let loaded = read(&text).unwrap();

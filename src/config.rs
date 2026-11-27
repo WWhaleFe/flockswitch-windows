@@ -1040,8 +1040,12 @@ impl Config {
             return Ok(cfg);
         }
         let text = std::fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-        let cfg = Config::parse(&text).with_context(|| format!("parsing {}", path.display()))?;
+        let mut cfg = Config::parse(&text).with_context(|| format!("parsing {}", path.display()))?;
         cfg.validate()?;
+        // One-time change of the default key rules (2.2): Shift+Space as a Korean/English key.
+        if cfg.network.apply_hangul_defaults() {
+            cfg.save()?;
+        }
         Ok(cfg)
     }
 

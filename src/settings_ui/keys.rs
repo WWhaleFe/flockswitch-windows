@@ -88,8 +88,18 @@ impl SettingsApp {
             note_box(ui, p, NoteKind::Info, t.keys_note_sub, None);
         }
         gap(ui);
+        note_box(ui, p, NoteKind::Info, t.keys_guide_note, None);
+        gap(ui);
         section_head(ui, p, t.keys_section, None, |ui| head_note(ui, t.keys_section_note, p.muted));
-        card_pad(ui, p, |ui| self.key_pane(ui, t, p));
+        card_pad(ui, p, |ui| {
+            // One switch for every direction leaving this computer; the table below follows it.
+            let mut on = self.cfg.network.shift_space_on(Os::Windows);
+            if switch_row(ui, p, t.keys_shift_space, Some(t.keys_shift_space_help), &mut on) {
+                self.set_shift_space(on);
+            }
+            divider(ui, p);
+            self.key_pane(ui, t, p)
+        });
     }
 
     /// The tabs (the system to pair with, the direction) and the rules of that direction.
@@ -291,6 +301,22 @@ impl SettingsApp {
         }
     }
 
+    /// Saves the Shift+Space switch: every direction leaving this computer changes, and a
+    /// sub sends the changed pairs to its master like any other key edit.
+    fn set_shift_space(&mut self, on: bool) {
+        let before = self.cfg.network.all_rules();
+        self.apply(|c| c.network.set_shift_space(Os::Windows, on));
+        if self.follows_master() {
+            let changed: flockswitch::key_rules::Rules = self.cfg.network.all_rules().into_iter()
+                .filter(|(pair, rule)| before.get(pair) != Some(rule))
+                .collect();
+            if changed.is_empty() { return; }
+            if let Err(e) = crate::net::request_key_rules(&changed) {
+                self.error = Some(format!("{e:#}"));
+            }
+        }
+    }
+
     /// "Compare keys by system": a window with the table of what each system calls what.
     pub(super) fn keycmp_window(&mut self, ctx: &egui::Context, t: &Texts) {
         if !self.keys_cmp {
@@ -315,6 +341,14 @@ impl SettingsApp {
                     comparison_table(ui, p, t);
                     ui.add_space(12.0);
                     ui.label(RichText::new(t.keys_cmp_note).size(12.5).color(p.muted));
+                    ui.add_space(20.0);
+                    ui.label(RichText::new(t.keys_guide_head).font(bold(15.0)).color(p.text));
+                    ui.add_space(6.0);
+                    for [topic, text] in t.keys_guide {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(topic).font(bold(13.0)).color(p.text));
+                        ui.label(RichText::new(text).size(13.0).color(p.muted));
+                    }
                 });
                 ui.add_space(10.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

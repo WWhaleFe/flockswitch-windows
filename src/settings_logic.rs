@@ -22,15 +22,16 @@ pub fn cell_at(cells: &[Cell], col: u8, row: u8) -> Option<&Cell> {
     cells.iter().find(|c| (c.col, c.row) == (col, row))
 }
 
-/// Moves (or first places) the computer `id` into the empty cell (`col`, `row`). None
-/// when that is not allowed: the cell is outside the grid or taken, or `id` is not one
-/// of `known` (this computer and the paired ones).
-pub fn move_to(cells: &[Cell], known: &[String], id: &str, col: u8, row: u8) -> Option<Vec<Cell>> {
+/// Moves (or first places) monitor `display` of the computer `id` into the empty cell
+/// (`col`, `row`); the computer's other monitors and every other computer keep their cells.
+/// None when that is not allowed: the cell is outside the grid or taken, or `id` is not
+/// one of `known` (this computer and the paired ones).
+pub fn move_to(cells: &[Cell], known: &[String], id: &str, display: u8, col: u8, row: u8) -> Option<Vec<Cell>> {
     if col >= COLS || row >= ROWS || !known.iter().any(|k| k == id) || cell_at(cells, col, row).is_some() {
         return None;
     }
-    let mut next: Vec<Cell> = cells.iter().filter(|c| c.id != id).cloned().collect();
-    next.push(Cell { id: id.into(), col, row });
+    let mut next: Vec<Cell> = cells.iter().filter(|c| !(c.id == id && c.display == display)).cloned().collect();
+    next.push(Cell::of_display(id, display, col, row));
     Some(next)
 }
 
@@ -46,8 +47,11 @@ pub fn direct_pairs(cells: &[Cell], me: &str) -> Vec<(String, String)> {
     for (i, a) in cells.iter().enumerate() {
         for b in &cells[i + 1..] {
             let near = a.col.abs_diff(b.col) + a.row.abs_diff(b.row) == 1;
-            if near && a.id != me && b.id != me {
-                pairs.push((a.id.clone(), b.id.clone()));
+            let pair = (a.id.clone(), b.id.clone());
+            let again = pairs.contains(&pair) || pairs.contains(&(b.id.clone(), a.id.clone()));
+            // Two monitors of one computer are no crossing (the system moves the cursor).
+            if near && a.id != me && b.id != me && a.id != b.id && !again {
+                pairs.push(pair);
             }
         }
     }
@@ -57,7 +61,11 @@ pub fn direct_pairs(cells: &[Cell], me: &str) -> Vec<(String, String)> {
 /// Saves `cells` as the master's layout and re-derives every peer's 2.0 side from it
 /// (the service does the same once it runs; this keeps the file right meanwhile).
 pub fn set_layout(net: &mut NetConfig, me: &str, cells: Vec<Cell>) {
-    let cells = layout::with_master(&cells, me);
+    let mut cells = layout::with_master(&cells, me);
+    // Cells of monitors that are away right now are not on the map; they stay saved.
+    let kept: Vec<Cell> = net.layout.iter().filter(|o| !cells.iter().any(|c| c.id == o.id && c.display == o.display)).cloned().collect();
+    cells.extend(kept);
+    let cells = layout::valid_cells(&cells);
     for p in &mut net.peers {
         p.side = layout::side_of(&cells, me, &p.id);
     }
@@ -191,7 +199,7 @@ mod tests {
     use flock_net::{PeerConfig, Side};
 
     fn cell(id: &str, col: u8, row: u8) -> Cell {
-        Cell { id: id.into(), col, row }
+        Cell::new(id, col, row)
     }
     fn ids(list: &[&str]) -> Vec<String> {
         list.iter().map(|s| s.to_string()).collect()
@@ -213,20 +221,43 @@ mod tests {
         let known = ids(&["me", "a", "b"]);
         let cells = vec![cell("me", 2, 1), cell("a", 1, 1)];
         // To an empty cell.
-        let moved = move_to(&cells, &known, "a", 4, 2).unwrap();
+        let moved = move_to(&cells, &known, "a", 0, 4, 2).unwrap();
         assert_eq!(cell_at(&moved, 4, 2).map(|c| c.id.as_str()), Some("a"));
         assert!(cell_at(&moved, 1, 1).is_none());
         assert_eq!(moved.len(), 2);
         // An unplaced computer is placed.
-        let placed = move_to(&cells, &known, "b", 0, 0).unwrap();
+        let placed = move_to(&cells, &known, "b", 0, 0, 0).unwrap();
         assert_eq!(placed.len(), 3);
         // The master moves too.
-        assert!(move_to(&cells, &known, "me", 2, 0).is_some());
+        assert!(move_to(&cells, &known, "me", 0, 2, 0).is_some());
         // Taken cell, outside the grid, unknown computer: refused.
-        assert!(move_to(&cells, &known, "a", 2, 1).is_none());
-        assert!(move_to(&cells, &known, "a", 5, 0).is_none());
-        assert!(move_to(&cells, &known, "a", 0, 3).is_none());
-        assert!(move_to(&cells, &known, "ghost", 0, 0).is_none());
+        assert!(move_to(&cells, &known, "a", 0, 2, 1).is_none());
+        assert!(move_to(&cells, &known, "a", 0, COLS, 0).is_none());
+        assert!(move_to(&cells, &known, "a", 0, 0, ROWS).is_none());
+        assert!(move_to(&cells, &known, "ghost", 0, 0, 0).is_none());
+    }
+
+    #[test]
+    fn moving_a_monitor_tile_keeps_the_other_tiles() {
+        let known = ids(&["me", "a"]);
+        let cells = vec![cell("me", 2, 1), Cell::of_display("a", 0, 1, 1), Cell::of_display("a", 1, 0, 1)];
+        let moved = move_to(&cells, &known, "a", 1, 4, 2).unwrap();
+        assert_eq!(moved.len(), 3);
+        assert!(moved.contains(&Cell::of_display("a", 0, 1, 1)));
+        assert!(moved.contains(&Cell::of_display("a", 1, 4, 2)));
+        assert!(moved.contains(&cell("me", 2, 1)));
+        // Two monitors of one computer side by side are not a pair of computers.
+        let two = vec![cell("me", 2, 1), Cell::of_display("a", 0, 0, 0), Cell::of_display("a", 1, 1, 0)];
+        assert!(direct_pairs(&two, "me").is_empty());
+    }
+
+    #[test]
+    fn saving_a_layout_keeps_the_cells_of_monitors_that_are_away() {
+        let mut net = NetConfig { layout: vec![cell("me", 2, 1), Cell::of_display("a", 0, 1, 1), Cell::of_display("a", 1, 0, 1)], ..NetConfig::default() };
+        // The map shows only the first monitor of a now; moving it must not lose the second.
+        set_layout(&mut net, "me", vec![cell("me", 2, 1), Cell::of_display("a", 0, 3, 1)]);
+        assert!(net.layout.contains(&Cell::of_display("a", 1, 0, 1)));
+        assert!(net.layout.contains(&Cell::of_display("a", 0, 3, 1)));
     }
 
     #[test]

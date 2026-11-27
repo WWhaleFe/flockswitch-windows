@@ -635,7 +635,7 @@ struct SettingsApp {
     haptics_dialog: Option<HapticsDialog>,
     edge_confirm: bool,
     /// The computer picked on the layout map, waiting for an empty cell.
-    layout_pick: Option<String>,
+    layout_pick: Option<(String, u8)>,
     /// This computer's network id (from the status, or read from the identity file).
     my_id: Option<String>,
     /// The keyboard pane: which OS pair and which direction of it is shown.
@@ -3753,7 +3753,7 @@ mod tests {
                 crate::i18n::set_language(lang);
                 for page in pages {
                     app.page = page;
-                    app.layout_pick = Some("peer-a".into());
+                    app.layout_pick = Some(("peer-a".into(), 0));
                     for pair in 0..3 {
                         app.key_pair = pair;
                         for dir in 0..2 {

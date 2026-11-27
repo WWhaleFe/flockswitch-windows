@@ -83,7 +83,7 @@ pub fn network_side_ready(edge: Edge) -> bool {
     let status = live.service.status();
     // The computer in the neighbouring cell of the layout (a master's sub or, on a sub,
     // another sub), as long as its link is up.
-    let next = flock_net::layout::neighbour(&status.layout, &status.me.id, side);
+    let next = flock_net::layout::neighbour_on_side(&status.layout, &status.me.id, side);
     status.running
         && status.me.can_send
         && status.state.mode == "local"
@@ -329,6 +329,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                         port: config.port,
                                         error: Some(format!("{e:#}")),
                                         can_send: true,
+                                        displays: vec![],
                                     },
                                     discovered: vec![],
                                     peers: vec![],
@@ -853,26 +854,17 @@ impl Platform for WindowsPlatform {
                 }
             }
             InputEvent::Key { usage, down } => {
-                let Some(scan) = keymap::hid_to_windows(usage) else {
+                // Lang1 (the Korean/English key) goes as VK_HANGUL with scan code 0x72.
+                let Some(key) = flockswitch::key_inject::key_fields(usage, down) else {
                     return;
                 };
-                let vk = keymap::hid_to_windows_vk(usage);
                 push(INPUT {
                     r#type: INPUT_KEYBOARD,
                     Anonymous: INPUT_0 {
                         ki: KEYBDINPUT {
-                            wVk: vk.unwrap_or(0),
-                            wScan: if vk.is_some() { 0 } else { scan.code },
-                            dwFlags: if vk.is_some() {
-                                0
-                            } else {
-                                KEYEVENTF_SCANCODE
-                                    | if scan.extended {
-                                        KEYEVENTF_EXTENDEDKEY
-                                    } else {
-                                        0
-                                    }
-                            } | if down { 0 } else { KEYEVENTF_KEYUP },
+                            wVk: key.vk,
+                            wScan: key.scan,
+                            dwFlags: key.flags,
                             time: 0,
                             dwExtraInfo: 0,
                         },
@@ -998,7 +990,7 @@ mod tests {
         config.network.peers.push(flock_net::PeerConfig { id: "p1".into(), name: "Laptop".into(), ..Default::default() });
         let status = |mode: &str, peer: Option<&str>| flock_net::Status {
             running: true,
-            me: flock_net::MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true },
+            me: flock_net::MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true, displays: vec![] },
             discovered: vec![],
             peers: vec![],
             state: flock_net::StateStatus { mode: mode.into(), peer: peer.map(Into::into) },
