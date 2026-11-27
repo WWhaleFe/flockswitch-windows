@@ -8,6 +8,7 @@
 - Shift+Space is now a Korean/English key on every sender by default (existing settings get it once; if you turn it off it stays off). The receiver gets only its own Korean/English key once.
 - Korean/English from another computer now reaches the Microsoft Korean IME as the Hangul key (VK_HANGUL with scan code 0x72), and the Hanja key as VK_HANJA.
 - Reconnecting to a computer on the same network is more reliable: IPv4 is tried before link-local IPv6 and every advertised address is tried, shorter waiting between tries for a computer that is seen on the network, an immediate try when it appears again, the listener is created again after the network changes, and each try and each closed link is logged.
+- Keyboard page: one switch, "Switch Korean/English with Shift+Space", turns Shift+Space on or off as a Korean/English key for every direction leaving this computer. Off, Space with Shift held types a space.
 
 ## 2.1.1 - 2026-11-27
 
