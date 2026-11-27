@@ -340,6 +340,10 @@ pub struct Texts {
     pub keys_cmp_labels: [&'static str; 8],
     pub keys_cmp_cells: [[&'static str; 4]; 8],
     pub keys_cmp_note: &'static str,
+    pub keys_sc_title: &'static str,
+    pub keys_sc_labels: [&'static str; 12],
+    pub keys_sc_cells: [[&'static str; 4]; 12],
+    pub keys_sc_note: &'static str,
     pub keys_guide_note: &'static str,
     pub keys_guide_head: &'static str,
     pub keys_guide: [[&'static str; 2]; 8],
@@ -721,7 +725,7 @@ const KO: Texts = Texts {
     keys_section_note: "마스터가 정한 값을 모든 컴퓨터가 함께 씁니다",
     keys_shift_space: "Shift+Space로 한/영 전환",
     keys_shift_space_help: "끄면 Shift를 누른 채 Space를 쳐도 공백이 그대로 갑니다.",
-    keys_cmp_button: "운영체제별 키 비교",
+    keys_cmp_button: "운영체제별 키·단축키",
     keys_pair_tab: "{0}와 오갈 때",
     keys_mods_head: "보조키",
     keys_mode: "보조키 맞추는 기준",
@@ -758,7 +762,11 @@ const KO: Texts = Texts {
     keys_cmp_labels: ["아래 줄 보조키", "단축키 키", "한/영 전환", "한자 변환", "줄 처음·끝", "단어 이동", "문서 처음·끝", "화면 캡처"],
     keys_cmp_cells: [["Control · Option · Command", "Ctrl · Windows · Alt", "Ctrl · Super · Alt", "Ctrl · Meta · Alt"], ["Command", "Ctrl", "Ctrl", "Ctrl"], ["Caps Lock, Control+Space", "한/영 키, 오른쪽 Alt", "입력기 설정: 한/영 키, Shift+Space, Super+Space", "Shift+Space, Ctrl+Space"], ["Option+Return", "한자 키", "한자 키, F9", "없음"], ["⌘← ⌘→", "Home End", "Home End", "Home End"], ["⌥← ⌥→", "Ctrl+← →", "Ctrl+← →", "Ctrl+← →"], ["⌘↑ ⌘↓", "Ctrl+Home End", "Ctrl+Home End", "Ctrl+Home End"], ["⌘⇧3, ⌘⇧4", "Print Screen, Win+Shift+S", "Print Screen", "전원+볼륨"]],
     keys_cmp_note: "Cmd와 Ctrl만 바꾸면 Windows의 Ctrl+←(단어 이동)가 Mac에서 ⌘←(줄 처음)가 됩니다. 그래서 보조키 대응표와 이동 키를 함께 맞춥니다",
-    keys_guide_note: "기본값에서 Shift+Space는 어느 컴퓨터에서 눌러도 받는 컴퓨터의 한/영 전환이 됩니다. 그 밖의 키가 어떻게 넘어가는지는 오른쪽 위 '운영체제별 키 비교'의 호환 안내에 있습니다",
+    keys_sc_title: "자주 쓰는 단축키",
+    keys_sc_labels: ["복사·붙여넣기·잘라내기", "실행 취소·다시 실행", "모두 선택·찾기", "저장·새로 만들기", "탭·창 닫기", "앱 끝내기", "앱 전환", "검색·앱 실행", "단어 지우기", "브라우저 새 탭·주소창", "화면 잠금", "멈춘 앱 끝내기"],
+    keys_sc_cells: [["⌘C ⌘V ⌘X", "Ctrl+C V X", "Ctrl+C V X", "Ctrl+C V X"], ["⌘Z, ⌘⇧Z", "Ctrl+Z, Ctrl+Y", "Ctrl+Z, Ctrl+Shift+Z", "Ctrl+Z"], ["⌘A, ⌘F", "Ctrl+A, Ctrl+F", "Ctrl+A, Ctrl+F", "Ctrl+A, 앱마다 다름"], ["⌘S, ⌘N", "Ctrl+S, Ctrl+N", "Ctrl+S, Ctrl+N", "앱마다 다름"], ["⌘W", "Ctrl+W, 창은 Alt+F4", "Ctrl+W, 창은 Alt+F4", "뒤로 가기(마우스 오른쪽 버튼)"], ["⌘Q", "Alt+F4", "Ctrl+Q(앱마다), Alt+F4", "최근 앱에서 밀어 닫기"], ["⌘Tab", "Alt+Tab", "Alt+Tab, Super+Tab", "최근 앱(마우스 앞으로 버튼)"], ["⌘Space", "Windows 키", "Super", "홈 화면 검색"], ["⌥⌫", "Ctrl+Backspace", "Ctrl+Backspace", "Ctrl+Backspace"], ["⌘T, ⌘L", "Ctrl+T, Ctrl+L", "Ctrl+T, Ctrl+L", "Ctrl+T, Ctrl+L(Chrome)"], ["⌃⌘Q", "Windows+L", "Super+L", "전원 버튼"], ["⌘⌥Esc", "Ctrl+Shift+Esc", "시스템 모니터 앱", "설정 > 앱 > 강제 중지"]],
+    keys_sc_note: "보조키 기준이 '기능 기준'(기본)이면 지금 손에 있는 키보드의 운영체제 단축키를 그대로 누르세요. 상대 운영체제의 같은 기능으로 바뀌어 갑니다(예: Mac 키보드로 Windows를 쓸 때 ⌘C는 Ctrl+C, Windows 키보드로 Mac을 쓸 때 Ctrl+C는 ⌘C). '자리 기준'이면 키 자리가 그대로 가므로 받는 쪽 운영체제의 단축키를 누릅니다. 맞지 않는 키는 키보드 페이지의 대응표에서 운영체제 쌍과 방향마다 직접 바꿀 수 있습니다",
+    keys_guide_note: "기본값에서 Shift+Space는 어느 컴퓨터에서 눌러도 받는 컴퓨터의 한/영 전환이 됩니다. 그 밖의 키가 어떻게 넘어가는지는 오른쪽 위 '운영체제별 키·단축키'의 호환 안내에 있습니다",
     keys_guide_head: "호환 안내: 무엇이 되고 안 되는지",
     keys_guide: [
         ["한/영 전환", "Mac은 Caps Lock을 짧게 누르거나 Shift+Space, Windows·Linux는 한/영 키나 Shift+Space로 받는 컴퓨터의 한/영이 바뀝니다. 받는 컴퓨터에는 그쪽 한/영 키 한 번만 갑니다(Windows·Linux는 한/영 키, Mac은 Caps Lock, Android는 Shift+Space). 위 표에서 키를 끄거나 바꿀 수 있습니다."],
@@ -1148,7 +1156,7 @@ const EN: Texts = Texts {
     keys_section_note: "Every computer uses the values the master sets",
     keys_shift_space: "Switch Korean/English with Shift+Space",
     keys_shift_space_help: "When off, Space with Shift held types a space.",
-    keys_cmp_button: "Compare keys by system",
+    keys_cmp_button: "Keys and shortcuts by system",
     keys_pair_tab: "With {0}",
     keys_mods_head: "Modifier keys",
     keys_mode: "How modifier keys are matched",
@@ -1185,7 +1193,11 @@ const EN: Texts = Texts {
     keys_cmp_labels: ["Bottom-row modifiers", "Shortcut key", "Korean/English", "Hanja", "Line start/end", "Word move", "Document start/end", "Screen capture"],
     keys_cmp_cells: [["Control · Option · Command", "Ctrl · Windows · Alt", "Ctrl · Super · Alt", "Ctrl · Meta · Alt"], ["Command", "Ctrl", "Ctrl", "Ctrl"], ["Caps Lock, Control+Space", "Hangul key, Right Alt", "Input method setting: Hangul key, Shift+Space, Super+Space", "Shift+Space, Ctrl+Space"], ["Option+Return", "Hanja key", "Hanja key, F9", "None"], ["⌘← ⌘→", "Home End", "Home End", "Home End"], ["⌥← ⌥→", "Ctrl+← →", "Ctrl+← →", "Ctrl+← →"], ["⌘↑ ⌘↓", "Ctrl+Home End", "Ctrl+Home End", "Ctrl+Home End"], ["⌘⇧3, ⌘⇧4", "Print Screen, Win+Shift+S", "Print Screen", "Power+Volume"]],
     keys_cmp_note: "If only Cmd and Ctrl are swapped, Windows Ctrl+← (move by word) becomes ⌘← (line start) on a Mac. So the modifier mapping and the movement keys are matched together",
-    keys_guide_note: "By default Shift+Space switches Korean/English on the receiving computer from any computer. How other keys carry over is in the compatibility guide under 'Compare keys by system' at the top right",
+    keys_sc_title: "Everyday shortcuts",
+    keys_sc_labels: ["Copy, paste, cut", "Undo, redo", "Select all, find", "Save, new", "Close tab or window", "Quit app", "Switch apps", "Search, launch apps", "Delete a word", "Browser new tab, address bar", "Lock screen", "Quit a frozen app"],
+    keys_sc_cells: [["⌘C ⌘V ⌘X", "Ctrl+C V X", "Ctrl+C V X", "Ctrl+C V X"], ["⌘Z, ⌘⇧Z", "Ctrl+Z, Ctrl+Y", "Ctrl+Z, Ctrl+Shift+Z", "Ctrl+Z"], ["⌘A, ⌘F", "Ctrl+A, Ctrl+F", "Ctrl+A, Ctrl+F", "Ctrl+A, depends on the app"], ["⌘S, ⌘N", "Ctrl+S, Ctrl+N", "Ctrl+S, Ctrl+N", "depends on the app"], ["⌘W", "Ctrl+W, window: Alt+F4", "Ctrl+W, window: Alt+F4", "Back (right mouse button)"], ["⌘Q", "Alt+F4", "Ctrl+Q (some apps), Alt+F4", "Swipe it away in recent apps"], ["⌘Tab", "Alt+Tab", "Alt+Tab, Super+Tab", "Recent apps (Forward mouse button)"], ["⌘Space", "Windows key", "Super", "Home screen search"], ["⌥⌫", "Ctrl+Backspace", "Ctrl+Backspace", "Ctrl+Backspace"], ["⌘T, ⌘L", "Ctrl+T, Ctrl+L", "Ctrl+T, Ctrl+L", "Ctrl+T, Ctrl+L(Chrome)"], ["⌃⌘Q", "Windows+L", "Super+L", "Power button"], ["⌘⌥Esc", "Ctrl+Shift+Esc", "System Monitor app", "Settings > Apps > Force stop"]],
+    keys_sc_note: "With the modifier mapping on 'By function' (the default), press the shortcuts of the system your keyboard belongs to: they arrive as the same function on the other system (with a Mac keyboard on Windows, ⌘C becomes Ctrl+C; with a Windows keyboard on a Mac, Ctrl+C becomes ⌘C). On 'By position' the keys keep their place, so press the receiving system's shortcuts. Any key that does not suit you can be changed in the mapping table on the Keyboard page, for each pair of systems and direction",
+    keys_guide_note: "By default Shift+Space switches Korean/English on the receiving computer from any computer. How other keys carry over is in the compatibility guide under 'Keys and shortcuts by system' at the top right",
     keys_guide_head: "Compatibility guide: what works and what does not",
     keys_guide: [
         ["Korean/English", "On a Mac, a short Caps Lock press or Shift+Space; on Windows and Linux, the Hangul key or Shift+Space, switches the receiving computer. The receiver gets only its own key once (the Hangul key on Windows and Linux, Caps Lock on a Mac, Shift+Space on Android). You can turn keys off or change them in the table above."],
@@ -1318,7 +1330,7 @@ mod tests {
             }
             let guide: Vec<&str> = t.keys_guide.iter().flatten().copied().collect();
             assert!(guide.iter().all(|s| !s.contains('\u{2014}') && !s.is_empty()));
-            let all = [t.keys_cmp_labels.as_slice(), t.keys_cmp_cells.iter().flatten().copied().collect::<Vec<_>>().as_slice()].concat();
+            let all = [t.keys_cmp_labels.as_slice(), t.keys_cmp_cells.iter().flatten().copied().collect::<Vec<_>>().as_slice(), t.keys_sc_labels.as_slice(), t.keys_sc_cells.iter().flatten().copied().collect::<Vec<_>>().as_slice(), &[t.keys_sc_note, t.keys_sc_title]].concat();
             assert!(all.iter().all(|s| !s.contains('\u{2014}') && !s.is_empty()));
         }
     }
