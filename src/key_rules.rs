@@ -3,6 +3,7 @@ use std::{
     collections::BTreeMap,
     io::Write,
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 pub type Rules = BTreeMap<String, flock_net::DirRules>;
@@ -29,8 +30,8 @@ fn read(path: &Path) -> anyhow::Result<Option<Rules>> {
     }
 }
 
-/// One producer publishes edits; one consumer owns the in-flight file. Serialize
-/// consumer calls when the service hook and network thread share this outbox.
+/// Settings and network processes serialize access through the same file lock.
+/// Serialize consumer calls when the service hook and network thread share this outbox.
 pub struct Outbox {
     path: PathBuf,
 }
@@ -40,16 +41,49 @@ impl Outbox {
         Self { path }
     }
 
+    fn lock(&self) -> anyhow::Result<std::fs::File> {
+        if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        // Keep this file in place so every process locks the same file. The OS
+        // releases the lock on close or process exit, including after a crash.
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(self.path.with_extension("lock"))?;
+        let started = Instant::now();
+        loop {
+            match file.try_lock() {
+                Ok(()) => return Ok(file),
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    if started.elapsed() >= Duration::from_secs(2) {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "timed out locking key rule outbox",
+                        ).into());
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(std::fs::TryLockError::Error(e)) => return Err(e.into()),
+            }
+        }
+    }
+
     /// Queues only the pairs the user changed. Successive edits merge per pair, the newest
     /// value of a pair wins.
     pub fn publish(&self, changed: &Rules) -> anyhow::Result<()> {
+        self.publish_with(changed, || {})
+    }
+
+    fn publish_with(&self, changed: &Rules, after_read: impl FnOnce()) -> anyhow::Result<()> {
         use std::sync::atomic::{AtomicU64, Ordering};
+        let _lock = self.lock()?;
         let mut keys = read(&self.path).ok().flatten().unwrap_or_default();
+        after_read();
         keys.extend(changed.iter().map(|(pair, rule)| (pair.clone(), rule.clone())));
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let tmp = self.path.with_extension(format!(
             "{}-{}.tmp",
             std::process::id(),
@@ -75,6 +109,7 @@ impl Outbox {
     /// Finish the in-flight edit before claiming the latest queued edit. Serializing
     /// sends prevents a stale snapshot from acknowledging a fast edit-and-revert.
     pub fn pending(&self) -> anyhow::Result<Option<Rules>> {
+        let _lock = self.lock()?;
         let inflight = self.path.with_extension("inflight");
         if let Some(keys) = read(&inflight)? {
             return Ok(Some(keys));
@@ -90,6 +125,13 @@ impl Outbox {
     /// Drops the in-flight and the queued edit: unpair, role change, reset, or a master
     /// that cannot take edits.
     pub fn clear(&self) {
+        let _lock = match self.lock() {
+            Ok(lock) => lock,
+            Err(e) => {
+                log::warn!("lock pending key rules for clearing: {e:#}");
+                return;
+            }
+        };
         for path in [self.path.clone(), self.path.with_extension("inflight")] {
             match std::fs::remove_file(&path) {
                 Ok(()) => {}
@@ -101,6 +143,7 @@ impl Outbox {
 
     /// The settings UI keeps showing its newest edit while an older send completes.
     pub fn latest(&self) -> anyhow::Result<Option<Rules>> {
+        let _lock = self.lock()?;
         let sent = read(&self.path.with_extension("inflight"))?;
         let queued = read(&self.path)?;
         Ok(match (sent, queued) {
@@ -112,6 +155,7 @@ impl Outbox {
     /// Only rules observed in the master's settings count as confirmation, never a
     /// successful enqueue of the outbound service command.
     pub fn confirm(&self, keys: &Rules) -> anyhow::Result<()> {
+        let _lock = self.lock()?;
         let inflight = self.path.with_extension("inflight");
         if read(&inflight)?
             .as_ref()
@@ -157,6 +201,102 @@ mod tests {
         config.migrate_keys();
         config.keys.get_mut("mac>windows").unwrap().mod_mode = mode;
         config.keys
+    }
+
+    #[test]
+    fn publishing_cannot_resurrect_an_edit_claimed_and_confirmed_during_the_merge() {
+        use std::{sync::mpsc, thread, time::Duration};
+
+        let fixture = Fixture::new();
+        let mut old = rules(flock_net::ModMode::Off);
+        old.retain(|pair, _| pair == "mac>windows");
+        let mut new = rules(flock_net::ModMode::Position);
+        new.retain(|pair, _| pair == "linux>windows");
+        fixture.outbox().publish(&old).unwrap();
+        let (read_tx, read_rx) = mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
+        let publisher = fixture.outbox();
+        let consumer = fixture.outbox();
+        let (completed_during_merge, delivered) = thread::scope(|scope| {
+            let network = scope.spawn(move || {
+                read_rx.recv().unwrap();
+                let delivered = consumer.pending().unwrap().unwrap();
+                consumer.confirm(&delivered).unwrap();
+                done_tx.send(()).unwrap();
+                delivered
+            });
+            let mut completed_during_merge = false;
+            publisher.publish_with(&new, || {
+                read_tx.send(()).unwrap();
+                completed_during_merge = done_rx.recv_timeout(Duration::from_millis(250)).is_ok();
+            }).unwrap();
+            // Keep the receiver alive until the consumer has finished after publication.
+            let delivered = network.join().unwrap();
+            (completed_during_merge, delivered)
+        });
+        assert_eq!(fixture.outbox().pending().unwrap(), None,
+            "an acknowledged old edit must not be queued again by the publisher");
+        old.extend(new);
+        assert_eq!(delivered, old);
+        assert!(!completed_during_merge);
+    }
+
+    #[test]
+    fn every_outbox_operation_waits_for_the_same_file_lock() {
+        use std::{sync::mpsc, thread};
+
+        for operation in ["publish", "pending", "confirm", "clear", "latest"] {
+            let fixture = Fixture::new();
+            let keys = rules(flock_net::ModMode::Off);
+            fixture.outbox().publish(&keys).unwrap();
+            fixture.outbox().pending().unwrap();
+            let lock = fixture.outbox().lock().unwrap();
+            let worker = fixture.outbox();
+            let (started_tx, started_rx) = mpsc::channel();
+            let (done_tx, done_rx) = mpsc::channel();
+            thread::scope(|scope| {
+                let task = scope.spawn(move || {
+                    started_tx.send(()).unwrap();
+                    match operation {
+                        "publish" => worker.publish(&keys).unwrap(),
+                        "pending" => { worker.pending().unwrap(); }
+                        "confirm" => worker.confirm(&keys).unwrap(),
+                        "clear" => worker.clear(),
+                        "latest" => { worker.latest().unwrap(); }
+                        _ => unreachable!(),
+                    }
+                    done_tx.send(()).unwrap();
+                });
+                started_rx.recv().unwrap();
+                let result = done_rx.recv_timeout(Duration::from_millis(100));
+                // Always release before asserting so a failure cannot strand the worker.
+                drop(lock);
+                task.join().unwrap();
+                assert!(matches!(result, Err(mpsc::RecvTimeoutError::Timeout)),
+                    "{operation} bypassed the outbox lock: {result:?}");
+                done_rx.recv().unwrap();
+            });
+        }
+    }
+
+    #[test]
+    fn lock_contention_times_out_without_removing_the_live_lock() {
+        let fixture = Fixture::new();
+        let lock = fixture.outbox().lock().unwrap();
+        let error = fixture.outbox().publish(&rules(flock_net::ModMode::Off)).unwrap_err();
+        assert_eq!(error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::TimedOut);
+        let contender = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(fixture.outbox().path.with_extension("lock"))
+            .unwrap();
+        assert!(matches!(contender.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+        assert!(!fixture.outbox().path.exists());
+        drop(lock);
+        // An existing lock file is reusable immediately after its owner closes it.
+        fixture.outbox().publish(&rules(flock_net::ModMode::Position)).unwrap();
+        assert_eq!(fixture.outbox().pending().unwrap(), Some(rules(flock_net::ModMode::Position)));
     }
 
     #[test]
