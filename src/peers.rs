@@ -17,7 +17,7 @@ mod tests {
     use flock_net::{MeStatus, PeerConfig, PeerStatus, StateStatus};
 
     fn peer(id: &str, name: &str) -> PeerStatus {
-        PeerStatus { id: id.into(), name: name.into(), os: None, connected: true, rtt_ms: None, can_send: true, via_master: true, keyrules: true }
+        PeerStatus { id: id.into(), name: name.into(), os: None, connected: true, rtt_ms: None, can_send: true, via_master: true, keyrules: true, displays: vec![], paused: false }
     }
 
     #[test]
@@ -26,7 +26,7 @@ mod tests {
         net.peers.push(PeerConfig { id: "p1".into(), name: "Laptop".into(), ..Default::default() });
         let status = Status {
             running: true,
-            me: MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true },
+            me: MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true, displays: vec![] },
             discovered: vec![],
             peers: vec![peer("p1", "Renamed"), peer("p2", "Desk"), peer("p3", "")],
             state: StateStatus { mode: "local".into(), peer: None },

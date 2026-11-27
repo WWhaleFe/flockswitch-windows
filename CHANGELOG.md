@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0 - 2026-11-27
+
+- Layout map is now 6 x 4 (saved layouts keep their places), with one tile per monitor: a computer with two monitors has two tiles ("Name · 1", "Name · 2"), other computers can sit next to a specific monitor, and the cursor crosses only at that monitor's edge and arrives on the matching monitor of the other computer. Click a monitor tile, then an empty cell, to move just that tile. Missing monitor tiles are placed next to the others by how the monitors are arranged.
+- **Pause connection** per paired computer (next to **Unpair**, master or sub): the link is closed, the computer is not dialed or accepted and the cursor does not cross to it, but it stays paired and keeps its place. Paused rows and tiles are dimmed and say "Paused"; turning the switch off reconnects at once.
+- Keyboard page: a note and a compatibility guide (in **Compare keys by system**) on what works between which systems, what is mapped and what cannot be sent.
+- Shift+Space is now a Korean/English key on every sender by default (existing settings get it once; if you turn it off it stays off). The receiver gets only its own Korean/English key once.
+- Korean/English from another computer now reaches the Microsoft Korean IME as the Hangul key (VK_HANGUL with scan code 0x72), and the Hanja key as VK_HANJA.
+- Reconnecting to a computer on the same network is more reliable: IPv4 is tried before link-local IPv6 and every advertised address is tried, shorter waiting between tries for a computer that is seen on the network, an immediate try when it appears again, the listener is created again after the network changes, and each try and each closed link is logged.
+
 ## 2.1.1 - 2026-11-27
 
 - When crossing cannot start, it no longer retries constantly: it waits 2 s, up to 30 s, before trying again, and shows the reason.

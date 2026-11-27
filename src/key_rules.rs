@@ -339,9 +339,9 @@ mod tests {
         assert!(!undeliverable(&config, None));
         let status = |connected, keyrules| Status {
             running: true,
-            me: MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true },
+            me: MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true, displays: vec![] },
             discovered: vec![],
-            peers: vec![PeerStatus { id: "m".into(), name: "M".into(), os: None, connected, rtt_ms: None, can_send: true, via_master: false, keyrules }],
+            peers: vec![PeerStatus { id: "m".into(), name: "M".into(), os: None, connected, rtt_ms: None, can_send: true, via_master: false, keyrules, displays: vec![], paused: false }],
             state: StateStatus { mode: "local".into(), peer: None },
             pairing: None, transfer: None, following: None, layout: vec![], reconnecting: false, keys: Default::default(),
         };

@@ -88,6 +88,8 @@ impl SettingsApp {
             note_box(ui, p, NoteKind::Info, t.keys_note_sub, None);
         }
         gap(ui);
+        note_box(ui, p, NoteKind::Info, t.keys_guide_note, None);
+        gap(ui);
         section_head(ui, p, t.keys_section, None, |ui| head_note(ui, t.keys_section_note, p.muted));
         card_pad(ui, p, |ui| self.key_pane(ui, t, p));
     }
@@ -315,6 +317,14 @@ impl SettingsApp {
                     comparison_table(ui, p, t);
                     ui.add_space(12.0);
                     ui.label(RichText::new(t.keys_cmp_note).size(12.5).color(p.muted));
+                    ui.add_space(20.0);
+                    ui.label(RichText::new(t.keys_guide_head).font(bold(15.0)).color(p.text));
+                    ui.add_space(6.0);
+                    for [topic, text] in t.keys_guide {
+                        ui.add_space(8.0);
+                        ui.label(RichText::new(topic).font(bold(13.0)).color(p.text));
+                        ui.label(RichText::new(text).size(13.0).color(p.muted));
+                    }
                 });
                 ui.add_space(10.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
