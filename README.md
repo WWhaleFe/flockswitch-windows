@@ -103,6 +103,10 @@ cargo build --release --target x86_64-pc-windows-gnu       # from macOS/Linux (n
 
 The Microsoft Store package (MSIX): `packaging/windows/store/make-msix.ps1`, built by the *Store package* workflow; see [packaging/windows/store/README.md](packaging/windows/store/README.md) (Korean) for submitting it.
 
+## Before you push
+
+The pre-push hook (`.git/hooks/pre-push`, which calls `scripts/pre-push.sh`) mirrors CI as far as a Mac can: the Cargo.lock check, `cargo check --target x86_64-pc-windows-gnu --all-targets`, the library and netcore tests, and `scripts/test-host.py`, which builds the real bin crate on the host (Windows API calls are only declared there, the Microsoft Store client is a stub) and runs its unit tests. Pushing tags only runs the lock check. In an emergency, `FLOCKSWITCH_SKIP_PREPUSH=1 git push`.
+
 ## License
 
 MIT
