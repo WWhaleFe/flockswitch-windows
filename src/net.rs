@@ -5,6 +5,9 @@ use crate::{
     shared::Shared,
 };
 use flock_net::{keymap, InputEvent, MouseButton, NetConfig, Os, Platform, Rect, Role, Service, Side};
+use flockswitch::key_rules::{echoed, Outbox, Rules};
+use flockswitch::held_keys::{release_plan, KeyStep};
+use flockswitch::idle::{CONFIG_POLL, NETWORK_POLL, WORKER_STACK};
 use serde_json::{json, Value};
 use std::{
     cell::RefCell,
@@ -23,9 +26,31 @@ use windows_sys::Win32::{
     UI::{Input::KeyboardAndMouse::*, WindowsAndMessaging::*},
 };
 
+/// Where files received from another computer are saved.
+pub fn received_dir() -> Option<PathBuf> {
+    Some(dirs::download_dir()?.join("flockswitch"))
+}
+
 pub fn config_dir() -> PathBuf {
     Config::base_dir()
 }
+
+/// Where the settings window leaves key rules edited on a sub. The window is another
+/// process and cannot call the service; the network thread sends them to the master.
+fn key_rules_request_path() -> PathBuf {
+    Config::path().with_file_name("key-rules.request")
+}
+
+/// Asks the running app to send `keys` to the master (a sub's edit of "OS 전환 시").
+pub fn request_key_rules(keys: &Rules) -> anyhow::Result<()> {
+    Outbox::new(key_rules_request_path()).publish(keys)
+}
+
+/// Drops edits waiting for the master (settings reset).
+pub fn clear_key_rules() {
+    Outbox::new(key_rules_request_path()).clear();
+}
+
 /// The running service and the config it runs with, for the edge watcher.
 struct Live {
     service: Arc<Service>,
@@ -56,11 +81,13 @@ pub fn network_side_ready(edge: Edge) -> bool {
     let Some(live) = live.as_ref() else { return false };
     let side = side_of(edge);
     let status = live.service.status();
+    // The computer in the neighbouring cell of the layout (a master's sub or, on a sub,
+    // another sub), as long as its link is up.
+    let next = flock_net::layout::neighbour(&status.layout, &status.me.id, side);
     status.running
+        && status.me.can_send
         && status.state.mode == "local"
-        && live.config.peers.iter().any(|p| {
-            p.side == Some(side) && status.peers.iter().any(|s| s.id == p.id && s.connected)
-        })
+        && next.is_some_and(|id| status.peers.iter().any(|s| s.id == id && s.connected))
 }
 
 /// Moves control to the computer on `edge`, entering at the spot matching (x, y).
@@ -133,7 +160,7 @@ impl NetState {
         };
         let name = || {
             let id = status.state.peer.as_deref().unwrap_or_default();
-            config.network.peers.iter().find(|p| p.id == id).map_or_else(|| id.to_string(), |p| p.name.clone())
+            flockswitch::peers::peer_name(&config.network, Some(status), id).unwrap_or_else(|| id.to_string())
         };
         match status.state.mode.as_str() {
             "controlling" => NetState::Controlling(name()),
@@ -178,35 +205,54 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
     thread::Builder::new()
         .name("network".into())
         .spawn(move || {
-            let platform = match WindowsPlatform::new() {
-                Ok(p) => Arc::new(p),
-                Err(e) => {
-                    log::error!("initialize network input: {e:#}");
-                    return;
-                }
-            };
+            restore_cursors();
+            let mut platform: Option<Arc<WindowsPlatform>> = None;
             let mut service: Option<Arc<Service>> = None;
             let mut mode = String::from("local");
             let mut previous: Option<NetConfig> = None;
             let mut retry = Instant::now() - Duration::from_secs(5);
+            let outbox = Arc::new(Mutex::new(Outbox::new(key_rules_request_path())));
+            let mut sent_keys: Option<(Rules, Instant)> = None;
+            let mut cached: Option<(u64, NetConfig, bool)> = None;
             while !shared.stopped() {
+                let observed = shared.control_changed.revision();
+                if shared.stopped() { break; }
                 shared.reload_if_edited();
                 let version = shared.version();
-                let config = runtime_config(&shared);
-                platform.edges_allowed.store(shared.config().network_edges_allowed(), Ordering::Release);
+                if cached.as_ref().is_none_or(|(v, _, _)| *v != version) {
+                    cached = Some((version, runtime_config(&shared), shared.config().network_edges_allowed()));
+                }
+                let (_, config, edges_allowed) = cached.as_ref().unwrap();
+                if let Some(p) = &platform {
+                    p.edges_allowed.store(*edges_allowed, Ordering::Release);
+                }
                 if !config.on {
                     LIVE.lock().unwrap().take();
                     mode = "local".into();
                     if let Some(s) = service.take() {
                         s.stop();
                     }
+                    // Dropping the adapter joins the hook thread and unregisters wake notices.
+                    platform.take();
                 } else {
                     if service.is_none() && retry.elapsed() >= Duration::from_secs(5) {
                         retry = Instant::now();
+                        let input = match WindowsPlatform::new() {
+                            Ok(p) => Arc::new(p),
+                            Err(e) => {
+                                log::error!("initialize network input: {e:#}");
+                                shared.control_changed.wait(observed, Some(CONFIG_POLL));
+                                continue;
+                            }
+                        };
+                        input.edges_allowed.store(*edges_allowed, Ordering::Release);
                         let paired = shared.clone();
                         let unpaired = shared.clone();
                         let changed = shared.clone();
                         let master = shared.clone();
+                        let edited = shared.clone();
+                        let master_outbox = outbox.clone();
+                        let unpair_outbox = outbox.clone();
                         // No Logitech channels here: `switch_logitech` stays the no-op default.
                         let hooks = flock_net::Hooks {
                             on_paired: Box::new(move |peer| {
@@ -219,9 +265,16 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                             }),
                             on_unpaired: Box::new(move |id| {
                                 if let Err(e) = unpaired
-                                    .update_config(|c| c.network.peers.retain(|p| p.id != id))
+                                    .update_config(|c| {
+                                        c.network.peers.retain(|p| p.id != id);
+                                        c.network.layout.retain(|cell| cell.id != id);
+                                    })
                                 {
                                     log::error!("save unpaired computer: {e:#}");
+                                }
+                                // The edits were for that master (or are moot without one).
+                                if flockswitch::key_rules::undeliverable(&unpaired.config().network, None) {
+                                    unpair_outbox.lock().unwrap().clear();
                                 }
                             }),
                             on_peer_changed: Box::new(move |peer| {
@@ -235,21 +288,36 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                 }
                             }),
                             on_master_settings: Box::new(move |settings| {
+                                // An old master snapshot must not overwrite an offline
+                                // edit that has yet to be acknowledged.
+                                let outbox = master_outbox.lock().unwrap();
+                                let pending = match outbox.latest() {
+                                    Ok(keys) => keys,
+                                    Err(e) => {
+                                        log::warn!("read pending key rules: {e:#}");
+                                        return;
+                                    }
+                                };
                                 if let Err(e) = master.update_config(|c| {
                                     settings.apply_to(&mut c.network);
+                                    if let Some(keys) = pending { c.network.keys.extend(keys); }
                                     apply_app_settings(c, &settings.app);
                                 }) {
                                     log::error!("save master settings: {e:#}");
                                 }
                             }),
+                            persist_key_rules: Box::new(move |keys| {
+                                edited.update_config(|c| c.network.keys = keys.clone())
+                            }),
                             ..flock_net::Hooks::default()
                         };
-                        match Service::start(config.clone(), platform.clone(), hooks) {
+                        match Service::start(config.clone(), input.clone(), hooks) {
                             Ok(s) => {
                                 let s = Arc::new(s);
                                 *LIVE.lock().unwrap() =
                                     Some(Live { service: s.clone(), config: config.clone() });
                                 service = Some(s);
+                                platform = Some(input);
                             }
                             Err(e) => {
                                 log::error!("start network: {e:#}");
@@ -260,6 +328,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                         name: config.name.clone(),
                                         port: config.port,
                                         error: Some(format!("{e:#}")),
+                                        can_send: true,
                                     },
                                     discovered: vec![],
                                     peers: vec![],
@@ -270,11 +339,14 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                     pairing: None,
                                     transfer: None,
                                     following: None,
+                                    layout: vec![],
+                                    reconnecting: false,
+                                    keys: Default::default(),
                                 };
                                 let _ = flock_net::write_status(config_dir(), &status);
                             }
                         }
-                    } else if previous.as_ref() != Some(&config) {
+                    } else if previous.as_ref() != Some(config) {
                         if let Some(s) = &service {
                             let _ = s.update_config(config.clone());
                             if let Some(live) = LIVE.lock().unwrap().as_mut() {
@@ -283,12 +355,56 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                         }
                     }
                 }
-                previous = Some(config);
-                for _ in 0..5 {
+                // A service command only queues a send. Keep retrying across service
+                // restarts and disconnected links until master settings echo the edit.
+                let live_status = service.as_ref().map(|s| s.status());
+                if flockswitch::key_rules::undeliverable(config, live_status.as_ref()) {
+                    // Unpaired, role changed, reset, or a 2.0 master that ignores edits.
+                    outbox.lock().unwrap().clear();
+                    sent_keys = None;
+                } else if config.on {
+                    if let (Some(s), Some(status)) = (&service, &live_status) {
+                        let connected = config.peers.iter().any(|p| p.role == Role::Master
+                            && status.peers.iter().any(|live| live.id == p.id && live.connected));
+                        if connected {
+                            let outbox = outbox.lock().unwrap();
+                            match outbox.pending() {
+                                Ok(Some(keys)) => {
+                                    if status.following.is_some() && echoed(&keys, &status.keys) {
+                                        if let Err(e) = outbox.confirm(&status.keys) {
+                                            log::warn!("confirm key rules from the master: {e:#}");
+                                        }
+                                        sent_keys = None;
+                                    } else if status.following.is_some() && sent_keys.as_ref().is_none_or(|(sent, at)| *sent != keys || at.elapsed() >= Duration::from_secs(1)) {
+                                        match s.send_key_rules(keys.clone()) {
+                                            Ok(()) => sent_keys = Some((keys, Instant::now())),
+                                            Err(e) => log::warn!("send key rules to the master: {e:#}"),
+                                        }
+                                    }
+                                }
+                                Ok(None) => sent_keys = None,
+                                Err(e) => log::warn!("read pending key rules: {e:#}"),
+                            }
+                        }
+                    }
+                }
+                if previous.as_ref() != Some(config) {
+                    previous = Some(config.clone());
+                }
+                let running = service.is_some();
+                for _ in 0..if running { 5 } else { 1 } {
+                    let observed = shared.control_changed.revision();
                     if shared.stopped() || shared.version() != version {
                         break;
                     }
-                    thread::sleep(Duration::from_millis(50));
+                    shared.control_changed.wait(observed, Some(if running { NETWORK_POLL } else { CONFIG_POLL }));
+                    // Woke from sleep or unlocked: look for the other computers again now.
+                    if crate::wake::take() {
+                        if let Some(s) = &service {
+                            log::info!("wake or unlock: reconnecting");
+                            let _ = s.reconnect();
+                        }
+                    }
                     if let Some(s) = &service {
                         let now = s.status().state.mode;
                         // The cursor arrived here, or came back here.
@@ -308,7 +424,9 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
             if let Some(s) = service {
                 s.stop();
             }
-            platform.stop_capture();
+            if let Some(platform) = platform {
+                platform.stop_capture();
+            }
         })
         .expect("spawning network service")
 }
@@ -406,6 +524,37 @@ unsafe extern "system" fn keyboard_hook(code: i32, message: WPARAM, data: LPARAM
         CallNextHookEx(null_mut(), code, message, data)
     }
 }
+fn send_release_plan(plan: &[KeyStep]) {
+    let key = |vk: u16, up: bool| {
+        let extended = matches!(vk, VK_RCONTROL | VK_RMENU | VK_LWIN | VK_RWIN);
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: if up { KEYEVENTF_KEYUP } else { 0 } | if extended { KEYEVENTF_EXTENDEDKEY } else { 0 },
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    };
+    let mut inputs = Vec::new();
+    for step in plan {
+        match *step {
+            KeyStep::Up(vk) => inputs.push(key(vk, true)),
+            KeyStep::Tap(vk) => {
+                inputs.push(key(vk, false));
+                inputs.push(key(vk, true));
+            }
+        }
+    }
+    let sent = unsafe { SendInput(inputs.len() as u32, inputs.as_ptr(), std::mem::size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        log::debug!("releasing held modifiers: SendInput {sent}/{}", inputs.len());
+    }
+}
 fn restore_cursors() {
     unsafe {
         SystemParametersInfoW(SPI_SETCURSORS, 0, null_mut(), 0);
@@ -466,10 +615,14 @@ impl WindowsPlatform {
         let (ready, initialized) = mpsc::sync_channel(1);
         let handle = thread::Builder::new()
             .name("network-input-hooks".into())
+            .stack_size(WORKER_STACK)
             .spawn(move || unsafe {
                 // The executable manifest sets PerMonitorV2 for all native threads.
                 let mut message: MSG = std::mem::zeroed();
                 PeekMessageW(&mut message, null_mut(), 0, 0, PM_NOREMOVE);
+                let _wake = crate::wake::Listener::new().map_err(|e| {
+                    log::warn!("wake and unlock notices unavailable: {e}");
+                });
                 let module = GetModuleHandleW(null());
                 let mouse = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_hook), module, 0);
                 let keyboard = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
@@ -497,6 +650,7 @@ impl WindowsPlatform {
                                 crate::edge::platform::place(park.0 as f64, park.1 as f64);
                                 hide_cursors();
                                 // Include modifiers already held when the cursor crossed.
+                                let mut held = Vec::new();
                                 for (vk, usage) in [
                                     (VK_LCONTROL, 0xe0),
                                     (VK_LSHIFT, 0xe1),
@@ -509,9 +663,19 @@ impl WindowsPlatform {
                                 ] {
                                     if GetAsyncKeyState(vk as i32) < 0 {
                                         let _ = sink.send(InputEvent::Key { usage, down: true });
+                                        held.push(vk);
                                     }
                                 }
                                 CAPTURE.with_borrow_mut(|c| *c = Some(Capture { sink, park }));
+                                // The hook swallows their key-up from now on, so release them
+                                // here. SendInput waits for this thread's own hook, so it runs on
+                                // another thread; injected events pass the hook.
+                                let plan = release_plan(&held);
+                                if !plan.is_empty() {
+                                    let _ = thread::Builder::new()
+                                        .name("flock-release-held".into())
+                                        .spawn(move || send_release_plan(&plan));
+                                }
                                 let _ = ack.send(());
                             }
                             Command::Stop(ack) => {
@@ -576,7 +740,8 @@ impl Platform for WindowsPlatform {
         displays()
     }
     fn cursor(&self) -> Option<(f64, f64)> {
-        if !self.edges_allowed.load(Ordering::Acquire) { return None; }
+        // Not gated on `edges_allowed`: a controlled computer needs the cursor to find the
+        // way back. Outgoing edges stay blocked by `app_drives_edges` and `start_capture`.
         crate::edge::platform::cursor()
     }
     fn warp(&self, x: f64, y: f64) {
@@ -615,7 +780,7 @@ impl Platform for WindowsPlatform {
         }
     }
     fn received_dir(&self) -> Option<PathBuf> {
-        Some(dirs::download_dir()?.join("flockswitch"))
+        received_dir()
     }
     fn ready(&self) -> Result<(), String> {
         Ok(())
@@ -634,7 +799,9 @@ impl Platform for WindowsPlatform {
         }
     }
     fn inject(&self, event: &InputEvent) {
-        let mut inputs = Vec::with_capacity(2);
+        let mut storage = [INPUT::default(); 2];
+        let mut count = 0;
+        let mut push = |input| { storage[count] = input; count += 1; };
         match *event {
             InputEvent::Motion { dx, dy } => {
                 let Some((x, y)) = crate::edge::platform::cursor() else {
@@ -646,7 +813,7 @@ impl Platform for WindowsPlatform {
                 };
                 unsafe {
                     let normalize = flock_net::windows_input::absolute_coordinate;
-                    inputs.push(mouse_input(
+                    push(mouse_input(
                         MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
                         0,
                         normalize(
@@ -670,7 +837,7 @@ impl Platform for WindowsPlatform {
                     MouseButton::Back => (MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, 1),
                     MouseButton::Forward => (MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, 2),
                 };
-                inputs.push(mouse_input(if down { press } else { release }, data, 0, 0));
+                push(mouse_input(if down { press } else { release }, data, 0, 0));
             }
             InputEvent::Scroll { dx, dy } => {
                 let mut scroll = self.scroll.lock().unwrap();
@@ -681,7 +848,7 @@ impl Platform for WindowsPlatform {
                 ] {
                     let amount = flock_net::windows_input::wheel_units(remainder, notches);
                     if amount != 0 {
-                        inputs.push(mouse_input(flag, amount, 0, 0));
+                        push(mouse_input(flag, amount, 0, 0));
                     }
                 }
             }
@@ -690,7 +857,7 @@ impl Platform for WindowsPlatform {
                     return;
                 };
                 let vk = keymap::hid_to_windows_vk(usage);
-                inputs.push(INPUT {
+                push(INPUT {
                     r#type: INPUT_KEYBOARD,
                     Anonymous: INPUT_0 {
                         ki: KEYBDINPUT {
@@ -713,6 +880,7 @@ impl Platform for WindowsPlatform {
                 });
             }
         }
+        let inputs = &storage[..count];
         if !inputs.is_empty() {
             let sent = unsafe {
                 SendInput(
@@ -830,13 +998,16 @@ mod tests {
         config.network.peers.push(flock_net::PeerConfig { id: "p1".into(), name: "Laptop".into(), ..Default::default() });
         let status = |mode: &str, peer: Option<&str>| flock_net::Status {
             running: true,
-            me: flock_net::MeStatus { id: String::new(), name: String::new(), port: 0, error: None },
+            me: flock_net::MeStatus { id: String::new(), name: String::new(), port: 0, error: None, can_send: true },
             discovered: vec![],
             peers: vec![],
             state: flock_net::StateStatus { mode: mode.into(), peer: peer.map(Into::into) },
             pairing: None,
             transfer: None,
             following: None,
+            layout: vec![],
+            reconnecting: false,
+            keys: Default::default(),
         };
         assert_eq!(NetState::of(&config, None), NetState::Off);
         assert_eq!(NetState::of(&config, Some(&status("local", None))), NetState::Idle);

@@ -192,7 +192,10 @@ pub fn describe(name: &str) -> Option<String> {
 
 /// The settings as a backup file: a comment header, then the settings file itself.
 pub fn to_text(cfg: &Config, computer: &str, stamp: &Stamp) -> Result<String> {
-    let body = toml::to_string_pretty(cfg)?;
+    // The pairing state belongs to this computer.
+    let mut own = cfg.clone();
+    keep_device_network(&mut own, &Config::default());
+    let body = toml::to_string_pretty(&own)?;
     Ok(format!(
         "# flockswitch settings backup\n\
          # app: flockswitch {} for Windows\n\
@@ -204,6 +207,28 @@ pub fn to_text(cfg: &Config, computer: &str, stamp: &Stamp) -> Result<String> {
         env!("CARGO_PKG_VERSION"),
         stamp.readable(),
     ))
+}
+
+/// Puts `from`'s device-specific network state into `cfg`: paired computers, layout,
+/// role, on/off and the accepted notice only make sense with this computer's identity.
+fn keep_device_network(cfg: &mut Config, from: &Config) {
+    let (n, f) = (&mut cfg.network, &from.network);
+    n.peers = f.peers.clone();
+    n.layout = f.layout.clone();
+    n.role = f.role;
+    n.on = f.on;
+    n.notice_accepted = f.notice_accepted;
+}
+
+/// The settings to run after loading `loaded` on this computer (`current`): the network
+/// state of this computer is kept.
+pub fn restore(current: &Config, loaded: Config) -> Config {
+    let mut next = loaded;
+    keep_device_network(&mut next, current);
+    // This computer's name and port stay too; the file may carry them (export writes them).
+    next.network.name = current.network.name.clone();
+    next.network.port = current.network.port;
+    next
 }
 
 /// What Save did.
@@ -465,6 +490,34 @@ mod tests {
 
     fn same(a: &Config, b: &Config) -> bool {
         toml::to_string_pretty(a).unwrap() == toml::to_string_pretty(b).unwrap()
+    }
+
+    #[test]
+    fn pairing_state_stays_on_this_computer() {
+        let mut cfg = Config::default();
+        cfg.network.on = true;
+        cfg.network.notice_accepted = true;
+        cfg.network.role = flock_net::Role::Sub;
+        cfg.network.name = "desk".into();
+        cfg.network.peers.push(flock_net::PeerConfig::default());
+        cfg.network.layout.push(flock_net::layout::Cell { id: "abc123".into(), col: 1, row: 1 });
+        let stamp = Stamp { year: 2026, month: 11, day: 27, hour: 12, minute: 0, second: 0 };
+        let text = to_text(&cfg, "desk", &stamp).unwrap();
+        let loaded = read(&text).unwrap();
+        assert!(loaded.network.peers.is_empty() && loaded.network.layout.is_empty());
+        assert!(!loaded.network.on && !loaded.network.notice_accepted);
+        assert_eq!(loaded.network.role, flock_net::Role::Master);
+        assert_eq!(loaded.network.name, "desk");
+        // Loading on this computer keeps its own pairing state, not the file's.
+        let mut other = Config::default();
+        other.network.on = true;
+        other.network.peers.push(flock_net::PeerConfig::default());
+        other.network.name = "mine".into();
+        other.network.port = 47199;
+        let next = restore(&other, loaded);
+        assert!(next.network.on && next.network.peers.len() == 1);
+        assert_eq!(next.network.name, "mine");
+        assert_eq!(next.network.port, 47199);
     }
 
     #[test]

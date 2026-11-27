@@ -17,6 +17,22 @@
 /// A size in points, [width, height].
 pub type Size = [f32; 2];
 
+/// Room left around a window opened on a small screen, in points: beside it, and above
+/// and below it (title bar, borders, taskbar edge).
+const FIT_MARGIN: Size = [24.0, 72.0];
+/// The window is never made smaller than this by `fit_to_work_area`.
+const FIT_FLOOR: Size = [600.0, 400.0];
+
+/// `want` (inner size, points) capped to a monitor work area of `work` physical pixels at
+/// `scale` pixels per point, less a small margin. Used once, when the window is created.
+pub fn fit_to_work_area(want: Size, work: [i32; 2], scale: f32) -> Size {
+    if scale <= 0.0 || work[0] <= 0 || work[1] <= 0 {
+        return want;
+    }
+    let room = [work[0] as f32 / scale - FIT_MARGIN[0], work[1] as f32 / scale - FIT_MARGIN[1]];
+    [0, 1].map(|i| want[i].min(room[i].max(FIT_FLOOR[i])))
+}
+
 /// Frames in which to ask again for the size, while the window settles.
 const TRIES: u8 = 12;
 /// Closer than this (points) is the size asked for.
@@ -97,21 +113,6 @@ impl SizeKeeper {
     }
 }
 
-/// The inner height a window `height` tall should grow to so that `overflow` more points
-/// of its page show, at most `cap`; None when it should stay as it is: everything shows,
-/// it cannot grow, or that height (or more) was already asked for (`asked`), so it is
-/// asked for once rather than every frame. Never smaller than it is.
-pub fn grown_height(height: f32, overflow: f32, cap: f32, asked: Option<f32>) -> Option<f32> {
-    if overflow <= 1.0 {
-        return None;
-    }
-    let want = (height + overflow.ceil() + 2.0).min(cap);
-    if want <= height + 1.0 || asked.is_some_and(|h| h >= want - 1.0) {
-        return None;
-    }
-    Some(want)
-}
-
 fn close(a: Size, b: Size) -> bool {
     (a[0] - b[0]).abs() <= TOLERANCE && (a[1] - b[1]).abs() <= TOLERANCE
 }
@@ -177,36 +178,27 @@ mod tests {
     }
 
     #[test]
-    fn grows_once_to_fit_the_page_within_the_screen() {
-        // Everything shows: nothing to do.
-        assert_eq!(grown_height(1020.0, 0.0, 1200.0, None), None);
-        assert_eq!(grown_height(1020.0, -300.0, 1200.0, None), None);
-        // 60.4 points hidden: that much taller, with a little room.
-        assert_eq!(grown_height(1020.0, 60.4, 1200.0, None), Some(1083.0));
-        // Asked for already: not again on the next frames, nor for less.
-        assert_eq!(grown_height(1020.0, 60.4, 1200.0, Some(1083.0)), None);
-        assert_eq!(grown_height(1020.0, 30.0, 1200.0, Some(1083.0)), None);
-        // The page got longer still: once more.
-        assert_eq!(grown_height(1083.0, 50.0, 1200.0, Some(1083.0)), Some(1135.0));
-        // No taller than the screen allows, and nothing once there.
-        assert_eq!(grown_height(1020.0, 400.0, 1200.0, None), Some(1200.0));
-        assert_eq!(grown_height(1200.0, 220.0, 1200.0, Some(1200.0)), None);
-        assert_eq!(grown_height(1200.0, 220.0, 1200.0, None), None);
-        // A window the user made taller than the cap is never shrunk.
-        assert_eq!(grown_height(1250.0, 40.0, 1200.0, None), None);
-        // The grown size is within the limits, so the keeper takes it as the good size.
-        let mut k = SizeKeeper::new(MIN, [1200.0, 1300.0]);
-        assert_eq!(k.step(1.25, [840.0, 1020.0]), None);
-        assert_eq!(k.step(1.25, [840.0, 1135.0]), None);
-        assert_eq!(k.step(1.0, [840.0, 1135.0]), Some(Fix { limits: true, size: [840.0, 1135.0] }));
-    }
-
-    #[test]
     fn a_fixed_window_keeps_its_one_size() {
         let mut k = SizeKeeper::new([620.0, 440.0], [620.0, 440.0]);
         assert_eq!(k.step(1.0, [620.0, 440.0]), None);
         assert_eq!(k.step(1.75, [620.0, 440.0]), Some(Fix { limits: true, size: [620.0, 440.0] }));
         assert_eq!(k.step(1.75, [620.0, 440.0]), None);
         assert_eq!(k.step(1.75, [700.0, 500.0]), Some(Fix { limits: false, size: [620.0, 440.0] }));
+    }
+
+    #[test]
+    fn fit_caps_to_small_work_areas_and_keeps_big_ones() {
+        let want = [1040.0, 660.0];
+        // 1920x1080 at 150%: work area 1920x1040 px.
+        assert_eq!(fit_to_work_area(want, [1920, 1040], 1.5), [1040.0, 1040.0 / 1.5 - 72.0]);
+        // 1366x768 at 125%: work area 1366x728 px.
+        let fit = fit_to_work_area(want, [1366, 728], 1.25);
+        assert_eq!(fit, [1040.0, 728.0 / 1.25 - 72.0]);
+        // A big screen leaves the size alone; nonsense input too.
+        assert_eq!(fit_to_work_area(want, [2560, 1400], 1.0), want);
+        assert_eq!(fit_to_work_area(want, [0, 0], 1.0), want);
+        assert_eq!(fit_to_work_area(want, [800, 600], 1.0), [776.0, 528.0]);
+        // A tiny screen stops at the floor.
+        assert_eq!(fit_to_work_area(want, [500, 400], 1.0), [600.0, 400.0]);
     }
 }

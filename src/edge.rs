@@ -12,11 +12,12 @@ use crate::config::EDGES;
 use crate::device::waveform;
 use crate::overlay;
 use crate::shared::Shared;
+use flockswitch::idle::{cursor_wait, WORKER_STACK};
+#[cfg(test)]
+use flockswitch::idle::EDGE_POLL as POLL;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// How often the cursor is read. Reading it is cheap; 25 ms is finer than anyone moves.
-const POLL: Duration = Duration::from_millis(25);
 /// How often the engine's status (this computer's channel, is the mouse here) is read.
 const STATUS_POLL: Duration = Duration::from_millis(300);
 /// How often the display arrangement is re-read.
@@ -29,12 +30,20 @@ const INSET: f64 = 24.0;
 pub(crate) const HAPTIC_TICK: Duration = Duration::from_millis(150);
 /// A pulse takes a moment to play; Change Host right after would cut it short.
 const FINAL_PULSE: Duration = Duration::from_millis(150);
-/// A turn of a shake comes after at least this many points of travel one way.
-const SHAKE_MIN_RUN: f64 = 80.0;
-const SHAKE_GAP: Duration = Duration::from_millis(400);
+/// A turn of a shake comes after at least this many points of travel one way. Quick
+/// shakes by hand are short strokes (30-100 points), well under the 80 this once asked.
+const SHAKE_MIN_STROKE: f64 = 30.0;
+/// Coming back this far from the furthest point counts as turning round (smaller
+/// moves are the hand's jitter and do not end a stroke).
+const SHAKE_SLOP: f64 = 8.0;
+/// A shake goes on while each turn follows the one before within this long; a longer
+/// pause ends it, and the time starts again with the next movement.
+const SHAKE_GAP: Duration = Duration::from_millis(350);
 /// However short the time asked for, a shake has at least this many turns.
-const SHAKE_MIN_TURNS: u32 = 3;
-/// After a shake is noticed, the next one starts counting only after this long.
+const SHAKE_MIN_TURNS: usize = 3;
+/// How much shorter than asked a shake may be and still count (see `Axis::update`).
+const SHAKE_SLACK: Duration = Duration::from_millis(150);
+/// After a shake is noticed, the next one counts only after this long.
 const SHAKE_REST: Duration = Duration::from_secs(2);
 
 /// A display, in the global desktop coordinates the platform uses.
@@ -110,71 +119,113 @@ pub(crate) fn rising_pulse(progress: f64) -> (Duration, u8) {
     }
 }
 
-/// Notices the cursor being shaken from side to side for a while: the turns must keep
-/// coming, each within `SHAKE_GAP` of the last, for the whole time asked for, and with
-/// a key asked for, only while that key is held.
+/// One axis of a shake: strokes one way and the other, told apart from jitter.
+#[derive(Default)]
+struct Axis {
+    last: Option<f64>,
+    /// Which way the stroke goes (+1, -1; 0 before the first movement), its furthest
+    /// point so far, where it started and when.
+    heading: f64,
+    extreme: f64,
+    start: f64,
+    stroke_began: Option<Instant>,
+    /// When the first stroke of the shake going on began, and its turns, oldest first.
+    began: Option<Instant>,
+    turns: Vec<Instant>,
+    /// The last time the cursor really moved (not just jitter).
+    last_move: Option<Instant>,
+}
+
+impl Axis {
+    /// Forgets the shake going on; the next stroke starts from `at`.
+    fn reset(&mut self, at: f64) {
+        *self = Axis { last: Some(at), start: at, extreme: at, ..Axis::default() };
+    }
+
+    /// Takes the next position; true when a shake that has lasted `time` is going on.
+    fn update(&mut self, v: f64, time: Duration, now: Instant) -> bool {
+        let Some(prev) = self.last.replace(v) else {
+            self.start = v;
+            return false;
+        };
+        if (v - prev).abs() >= 2.0 {
+            self.last_move = Some(now);
+        }
+        let stale = |t: Instant| now.duration_since(t) > SHAKE_GAP;
+        let mut turned = false;
+        if self.last_move.is_some_and(stale) || self.turns.last().is_some_and(|t| stale(*t)) {
+            self.reset(v);
+        }
+        if self.heading == 0.0 {
+            if (v - self.start).abs() >= SHAKE_SLOP {
+                self.heading = (v - self.start).signum();
+                self.extreme = v;
+                self.stroke_began = Some(now);
+            } else {
+                // Still at rest: the stroke starts from the latest still point.
+                self.start = v;
+            }
+        } else if (v - self.extreme) * self.heading >= 0.0 {
+            self.extreme = v;
+        } else if (self.extreme - v) * self.heading >= SHAKE_SLOP {
+            // A stroke of a shake is long enough and quick enough; a slow sweep or a
+            // short wobble ends the shake, and the time starts again from here.
+            let quick = self.stroke_began.is_some_and(|t| !stale(t));
+            if quick && (self.extreme - self.start).abs() >= SHAKE_MIN_STROKE {
+                if self.turns.is_empty() {
+                    self.began = self.stroke_began;
+                }
+                self.turns.push(now);
+                turned = true;
+            } else {
+                self.turns.clear();
+                self.began = None;
+            }
+            self.start = self.extreme;
+            self.heading = -self.heading;
+            self.extreme = v;
+            self.stroke_began = Some(now);
+        }
+        // "A second of shaking" is judged a little short: the first stroke is already
+        // under way before it is seen, and people stop as soon as the cursor reacts.
+        let needed = time.saturating_sub(SHAKE_SLACK);
+        // Judged at each new turn: a shake that has stopped is over.
+        turned && self.turns.len() >= SHAKE_MIN_TURNS && self.began.is_some_and(|b| now.duration_since(b) >= needed)
+    }
+}
+
+/// Notices the cursor being shaken for a while (in any direction: each axis is
+/// watched): the turns must keep coming, each within `SHAKE_GAP` of the last, for the
+/// whole time asked for, counted from where the movement began, and with a key asked
+/// for, only while that key is held.
 #[derive(Default)]
 struct Shake {
-    last_x: Option<f64>,
-    /// Which way the cursor is going (+1 or -1), and how far it has come that way.
-    heading: f64,
-    run: f64,
-    /// The first turn of the shake going on now, the latest one, and how many so far.
-    began: Option<Instant>,
-    last_turn: Option<Instant>,
-    turns: u32,
+    axes: [Axis; 2],
     noticed: Option<Instant>,
 }
 
 impl Shake {
-    /// Takes the cursor's x position and whether the key the settings ask for is held
-    /// (true when none is asked for); true at the moment the shake has gone on for
-    /// `needed`.
-    fn update(&mut self, x: f64, held: bool, needed: Duration, now: Instant) -> bool {
-        let last = self.last_x.replace(x);
-        let resting = self.noticed.is_some_and(|t| now.duration_since(t) < SHAKE_REST);
-        if !held || resting {
-            // Without the key nothing counts, and strokes start afresh once it is down.
-            self.stop();
-            self.heading = 0.0;
-            self.run = 0.0;
+    /// Takes the cursor's position and whether the key asked for is held (true when
+    /// none is); true at the moment a shake that has lasted `time` is noticed.
+    fn update(&mut self, (x, y): (f64, f64), held: bool, time: Duration, now: Instant) -> bool {
+        if !held {
+            // Let go of the key: the shake is over; the next starts from here.
+            self.axes[0].reset(x);
+            self.axes[1].reset(y);
             return false;
         }
-        let Some(last) = last else { return false };
-        if self.last_turn.is_some_and(|t| now.duration_since(t) > SHAKE_GAP) {
-            self.stop();
-        }
-        let dx = x - last;
-        if dx == 0.0 {
+        let a = self.axes[0].update(x, time, now);
+        let b = self.axes[1].update(y, time, now);
+        if !(a || b) {
             return false;
         }
-        if dx.signum() == self.heading {
-            self.run += dx.abs();
-            return false;
-        }
-        let turned = self.run >= SHAKE_MIN_RUN;
-        self.heading = dx.signum();
-        self.run = dx.abs();
-        if !turned {
-            return false;
-        }
-        // Decided at a turn, so the shaking really went on for the whole time.
-        let began = *self.began.get_or_insert(now);
-        self.last_turn = Some(now);
-        self.turns += 1;
-        if now.duration_since(began) < needed || self.turns < SHAKE_MIN_TURNS {
+        self.axes[0].reset(x);
+        self.axes[1].reset(y);
+        if self.noticed.is_some_and(|t| now.duration_since(t) < SHAKE_REST) {
             return false;
         }
         self.noticed = Some(now);
-        self.stop();
         true
-    }
-
-    /// The shake going on (if any) is over.
-    fn stop(&mut self) {
-        self.began = None;
-        self.last_turn = None;
-        self.turns = 0;
     }
 }
 
@@ -206,6 +257,7 @@ pub fn available() -> bool {
 pub fn spawn(shared: Arc<Shared>) {
     std::thread::Builder::new()
         .name("edges".into())
+        .stack_size(WORKER_STACK)
         .spawn(move || watch(shared))
         .expect("spawning the edge watcher");
 }
@@ -220,8 +272,10 @@ fn watch(shared: Arc<Shared>) {
         log::info!("edge switching: not available on this computer");
         return;
     }
-    let mut cfg = shared.config();
+    let mut observed = shared.edge_changed.revision();
     let mut version = shared.version();
+    let mut cfg = shared.config();
+    let mut wait = Some(Duration::ZERO);
     let mut announced = false;
     let mut status_read: Option<Instant> = None;
     // From the engine's status: this computer's channel, whether the master mouse is
@@ -243,7 +297,9 @@ fn watch(shared: Arc<Shared>) {
     let mut shake = Shake::default();
 
     while !shared.stopped() {
-        std::thread::sleep(POLL);
+        shared.edge_changed.wait(observed, wait);
+        observed = shared.edge_changed.revision();
+        if shared.stopped() { break; }
         if shared.version() != version {
             version = shared.version();
             cfg = shared.config();
@@ -251,6 +307,7 @@ fn watch(shared: Arc<Shared>) {
         }
         let (logitech_active, network_active) = edge_activity(&cfg);
         let active = logitech_active || network_active;
+        wait = cursor_wait(active, cfg.locate.on && cfg.locate.on_shake);
         if !announced {
             announced = true;
             if logitech_active {
@@ -264,7 +321,7 @@ fn watch(shared: Arc<Shared>) {
                 log::info!("edges: on, but no edge has a channel");
             }
         }
-        if status_read.is_none_or(|t| t.elapsed() >= STATUS_POLL) {
+        if !active || status_read.is_none_or(|t| t.elapsed() >= STATUS_POLL) {
             let first = status_read.is_none();
             status_read = Some(Instant::now());
             let st = shared.status();
@@ -303,8 +360,8 @@ fn watch(shared: Arc<Shared>) {
                 ShakeKey::None => true,
                 key => platform::key_down(key),
             };
-            let needed = Duration::from_millis(cfg.locate.shake_time_ms);
-            if platform::cursor().is_some_and(|(x, _)| shake.update(x, held, needed, Instant::now())) {
+            let time = Duration::from_millis(cfg.locate.shake_time_ms);
+            if platform::cursor().is_some_and(|at| shake.update(at, held, time, Instant::now())) {
                 overlay::locate(&cfg.locate);
             }
         }
@@ -568,83 +625,143 @@ mod tests {
 
     /// Feeds x positions, one poll apart, with the key held where `held` says; returns
     /// at which positions a shake lasting `time` was noticed.
-    fn shake_on(xs: &[f64], held: impl Fn(usize) -> bool, needed: Duration) -> Vec<usize> {
+    fn shake_with(xs: &[f64], held: impl Fn(usize) -> bool, time: Duration) -> Vec<usize> {
         let mut s = Shake::default();
         let start = Instant::now();
-        (0..xs.len()).filter(|&i| s.update(xs[i], held(i), needed, start + POLL * i as u32)).collect()
-    }
-
-    /// Back and forth over `width` points, `stroke` polls each way, for `polls` polls.
-    fn zigzag(width: f64, stroke: usize, polls: usize) -> Vec<f64> {
-        (0..polls)
-            .map(|i| {
-                let phase = i % (2 * stroke);
-                let step = if phase < stroke { phase } else { 2 * stroke - phase };
-                width * step as f64 / stroke as f64
-            })
+        xs.iter()
+            .enumerate()
+            .filter(|(i, x)| s.update((**x, 300.0), held(*i), time, start + POLL * *i as u32))
+            .map(|(i, _)| i)
             .collect()
     }
 
-    const ONE_S: Duration = Duration::from_secs(1);
+    fn shake_on(xs: &[f64]) -> Vec<usize> {
+        shake_with(xs, |_| true, Duration::from_millis(1000))
+    }
 
-    #[test]
-    fn a_sustained_shake_is_noticed_once_it_has_gone_on_long_enough() {
-        // 300 points each way, 4 polls (100 ms) per stroke, for 1.5 s.
-        let xs = zigzag(300.0, 4, 60);
-        let noticed = shake_on(&xs, |_| true, ONE_S);
-        assert_eq!(noticed.len(), 1, "{noticed:?}");
-        // The first turn is at poll 5; a second of shaking after it is poll 45.
-        assert!((45..=49).contains(&noticed[0]), "{noticed:?}");
-        // Asked for half a second, the same shake shows sooner, still once.
-        let quick = shake_on(&xs, |_| true, Duration::from_millis(500));
-        assert_eq!(quick.len(), 1);
-        assert!(quick[0] < noticed[0], "{quick:?}");
-        // Asked for two seconds, 1.5 s of shaking is not enough.
-        assert!(shake_on(&xs, |_| true, Duration::from_secs(2)).is_empty());
+    /// Back and forth by 300 points, three polls (75 ms) each way, for `polls` polls.
+    fn shaking(polls: usize) -> Vec<f64> {
+        (0..polls).map(|i| [0.0, 100.0, 200.0, 300.0, 200.0, 100.0][i % 6]).collect()
     }
 
     #[test]
-    fn a_brief_jiggle_is_not_a_shake() {
-        // Shaken hard but for only 0.6 s, then still.
-        let mut xs = zigzag(300.0, 3, 24);
-        xs.extend(std::iter::repeat_n(*xs.last().unwrap(), 60));
-        assert!(shake_on(&xs, |_| true, ONE_S).is_empty());
-        // Two short jiggles with a pause between do not add up.
-        let mut xs = zigzag(300.0, 3, 30);
-        xs.extend(std::iter::repeat_n(*xs.last().unwrap(), 20));
-        xs.extend(zigzag(300.0, 3, 30));
-        assert!(shake_on(&xs, |_| true, ONE_S).is_empty());
+    fn a_shake_counts_once_it_has_lasted_the_time() {
+        // Four seconds of shaking: noticed after about a second, then rests two seconds.
+        let noticed = shake_on(&shaking(160));
+        assert!(!noticed.is_empty(), "{noticed:?}");
+        let first = POLL * noticed[0] as u32;
+        assert!(first >= Duration::from_millis(800) && first < Duration::from_millis(1300), "{first:?}");
+        assert_eq!(noticed.len(), 2, "{noticed:?}");
+        assert!(POLL * (noticed[1] - noticed[0]) as u32 >= SHAKE_REST);
+        // The time asked for decides when.
+        let at = |ms: u64| shake_with(&shaking(160), |_| true, Duration::from_millis(ms))[0] as u32 * POLL;
+        assert!(at(500) < at(1000) && at(1000) < at(1500) && at(1500) < at(2000));
+        assert!(at(2000) >= Duration::from_millis(1800));
+    }
+
+    #[test]
+    fn a_short_shake_is_not_enough() {
+        // Half a second of shaking, then still: never a full second of it.
+        let mut xs = shaking(20);
+        xs.extend(std::iter::repeat_n(100.0, 100));
+        assert!(shake_on(&xs).is_empty());
+        // Two short shakes with a pause between do not add up.
+        let mut xs = shaking(30);
+        xs.extend(std::iter::repeat_n(100.0, 20));
+        xs.extend(shaking(30));
+        assert!(shake_on(&xs).is_empty(), "{:?}", shake_on(&xs));
     }
 
     #[test]
     fn ordinary_movement_is_not_a_shake() {
-        let straight: Vec<f64> = (0..200).map(|i| i as f64 * 40.0).collect();
-        assert!(shake_on(&straight, |_| true, ONE_S).is_empty());
+        let straight: Vec<f64> = (0..60).map(|i| i as f64 * 40.0).collect();
+        assert!(shake_on(&straight).is_empty());
         // Small wobbles never travel far enough to count.
-        let wobble = zigzag(20.0, 1, 200);
-        assert!(shake_on(&wobble, |_| true, ONE_S).is_empty());
-        // Slow drift back and forth across the screen: far, but each way takes a second.
-        let drift = zigzag(1500.0, 40, 400);
-        assert!(shake_on(&drift, |_| true, ONE_S).is_empty());
+        let wobble: Vec<f64> = (0..200).map(|i| if i % 2 == 0 { 0.0 } else { 20.0 }).collect();
+        assert!(shake_on(&wobble).is_empty());
+        // Far enough, but so slowly the turns are too far apart.
+        let slow: Vec<f64> = (0..400).map(|i| [0.0, 5.0, 10.0, 15.0][i % 4] + ((i / 40) % 2) as f64 * 200.0).collect();
+        assert!(shake_on(&slow).is_empty());
+        // Moving back and forth across the screen at an easy pace (a turn every 600 ms).
+        let sweeping: Vec<f64> = (0..400).map(|i| ((i % 48) as f64 - 24.0).abs() * 40.0).collect();
+        assert!(shake_on(&sweeping).is_empty());
     }
 
     #[test]
-    fn a_shake_counts_only_while_the_key_is_held() {
-        let xs = zigzag(300.0, 4, 120);
-        assert!(shake_on(&xs, |_| false, ONE_S).is_empty());
-        // Let go halfway through: the time starts again once the key is back down.
-        let noticed = shake_on(&xs, |i| !(30..40).contains(&i), ONE_S);
-        assert_eq!(noticed.len(), 1, "{noticed:?}");
-        assert!(noticed[0] >= 40 + 40, "{noticed:?}");
+    fn with_a_key_only_while_it_is_held() {
+        let xs = shaking(160);
+        let second = Duration::from_millis(1000);
+        // Never held: nothing.
+        assert!(shake_with(&xs, |_| false, second).is_empty());
+        // Held from 1.5 s on: noticed about a second after that.
+        let noticed = shake_with(&xs, |i| i >= 60, second);
+        assert!(!noticed.is_empty());
+        let at = POLL * noticed[0] as u32;
+        assert!(at >= Duration::from_millis(2300) && at < Duration::from_millis(2800), "{at:?}");
+        // Let go for a moment early on: the time starts again.
+        let noticed = shake_with(&xs, |i| !(30..32).contains(&i), second);
+        let at = POLL * noticed[0] as u32;
+        assert!(at >= Duration::from_millis(1600), "{at:?}");
+    }
+
+    /// A hand-made recording of a real shake: `hz` turns-and-back per second of `amp`
+    /// points each way along `dir`, the amplitude building up over the first 150 ms,
+    /// samples at uneven intervals of `step_ms` (the poll plus the scheduler's slop) and
+    /// a couple of points of sensor noise. Returns (time since the start, position).
+    fn recorded_shake(hz: f64, amp: f64, secs: f64, step_ms: (u64, u64), dir: (f64, f64), seed: u64) -> Vec<(Duration, (f64, f64))> {
+        let mut state = seed;
+        let mut next = move || {
+            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (state >> 33) as f64 / (1u64 << 31) as f64
+        };
+        let (mut t, mut out) = (0.0_f64, Vec::new());
+        while t <= secs {
+            let ramp = (t / 0.15).min(1.0);
+            let wave = (t * hz * std::f64::consts::TAU).sin() * amp * ramp;
+            let (nx, ny) = ((next() - 0.5) * 4.0, (next() - 0.5) * 4.0);
+            out.push((Duration::from_secs_f64(t), (800.0 + dir.0 * wave + nx, 500.0 + dir.1 * wave + ny)));
+            t += (step_ms.0 as f64 + next() * (step_ms.1 - step_ms.0) as f64) / 1000.0;
+        }
+        out
+    }
+
+    /// When (since the start) a recording was noticed as a shake lasting `time`.
+    fn noticed_at(recording: &[(Duration, (f64, f64))], time: Duration) -> Vec<Duration> {
+        let (mut s, start) = (Shake::default(), Instant::now());
+        recording.iter().filter(|(t, at)| s.update(*at, true, time, start + *t)).map(|(t, _)| *t).collect()
     }
 
     #[test]
-    fn shaking_on_shows_again_only_after_a_rest() {
-        // 6 s of shaking: noticed after ~1 s, then again after the 2 s rest and 1 s more.
-        let xs = zigzag(300.0, 4, 240);
-        let noticed = shake_on(&xs, |_| true, ONE_S);
-        assert_eq!(noticed.len(), 2, "{noticed:?}");
-        assert!(noticed[1] - noticed[0] >= 120, "{noticed:?}");
+    fn a_fast_second_of_shaking_is_noticed_as_recorded() {
+        let second = Duration::from_millis(1000);
+        // Quick, short shakes by hand: 6-9 turns a second over 30-120 points, along x,
+        // along y and diagonally, read every 10-12 ms (while watching) or 25-35 ms.
+        for (hz, amp) in [(6.0, 60.0), (7.5, 40.0), (9.0, 30.0), (5.0, 110.0)] {
+            for dir in [(1.0, 0.0), (0.0, 1.0), (0.8, 0.6)] {
+                for step in [(10, 12), (20, 30), (25, 35)] {
+                    for seed in 1..=4 {
+                        // A second of shaking, 150 ms of it getting up to speed.
+                        let rec = recorded_shake(hz, amp, 1.15, step, dir, seed);
+                        let got = noticed_at(&rec, second);
+                        assert!(!got.is_empty(), "{hz} Hz +-{amp} dir {dir:?} step {step:?} seed {seed}: not noticed in 1 s");
+                        assert!(got[0] >= Duration::from_millis(800) && got[0] <= Duration::from_millis(1150), "{got:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn recorded_non_shakes_stay_quiet() {
+        let second = Duration::from_millis(1000);
+        // A slow, wide sweep (about 2 turns a second) and plain jitter of a resting hand.
+        for (hz, amp) in [(1.0, 400.0), (1.2, 250.0), (7.0, 6.0), (10.0, 12.0)] {
+            let rec = recorded_shake(hz, amp, 6.0, (20, 30), (1.0, 0.0), 9);
+            assert!(noticed_at(&rec, second).is_empty(), "{hz} Hz +-{amp}");
+        }
+        // Half a second of shaking is not a second.
+        let rec = recorded_shake(7.5, 40.0, 0.5, (10, 12), (1.0, 0.0), 3);
+        assert!(noticed_at(&rec, second).is_empty());
     }
 
     #[test]

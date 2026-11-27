@@ -12,6 +12,7 @@
 //!   from this copy (see `already_running` in main.rs).
 
 use crate::shared::Shared;
+use flockswitch::idle::{update_wait, INSTALL_LIMIT};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -68,6 +69,17 @@ pub fn find() -> Result<Option<String>> {
     }
 }
 
+/// "Update now" in the settings window: the same install, but the Store version asks the
+/// Store to download and install with its own dialog (`RequestDownloadAndInstall...`; Windows
+/// may show one), and when that cannot be done opens the app's Store page instead.
+pub fn install_now(owner: Option<isize>) -> Result<()> {
+    if crate::store::packaged() {
+        store::install_now(owner)
+    } else {
+        github::install()
+    }
+}
+
 /// Installs the newest version and has it started. Returns once that is under way:
 /// this copy is then asked to quit, or closed by Windows.
 pub fn install() -> Result<()> {
@@ -116,22 +128,30 @@ pub fn install_into(shared: &Shared, version: String) {
 pub fn spawn_periodic(shared: Arc<Shared>) {
     std::thread::spawn(move || {
         let started = Instant::now();
-        let mut last: Option<Instant> = None;
+        let mut next = started + FIRST_CHECK;
+        // Since when the status has been Installing: a stuck install ends as failed.
+        let mut installing_since: Option<Instant> = None;
         while !shared.stopped() {
-            std::thread::sleep(Duration::from_secs(1));
-            let due = match last {
-                None => started.elapsed() >= FIRST_CHECK,
-                Some(at) => at.elapsed() >= CHECK_INTERVAL,
-            };
-            // The settings are copied only once a look is due, not every second.
-            if !due {
-                continue;
-            }
+            let observed = shared.control_changed.revision();
+            if shared.stopped() { break; }
             let cfg = shared.config();
-            if !cfg.check_updates || matches!(shared.status().update, UpdateState::Installing(_)) {
+            let status = shared.status().update;
+            if let UpdateState::Installing(v) = status {
+                let since = *installing_since.get_or_insert_with(Instant::now);
+                if since.elapsed() >= INSTALL_LIMIT {
+                    log::warn!("update {v}: still installing after {} min; counted as failed", INSTALL_LIMIT.as_secs() / 60);
+                    shared.set_status(|s| s.update = UpdateState::InstallFailed(v));
+                    installing_since = None;
+                }
+            } else {
+                installing_since = None;
+            }
+            let wait = update_wait(cfg.check_updates, installing_since.map(|t| t.elapsed()), next.saturating_duration_since(Instant::now()));
+            if wait != Some(Duration::ZERO) {
+                shared.control_changed.wait(observed, wait);
                 continue;
             }
-            last = Some(Instant::now());
+            next = Instant::now() + CHECK_INTERVAL;
             if let UpdateState::Available(v) = check_into(&shared) {
                 if cfg.auto_update {
                     install_into(&shared, v);
@@ -383,6 +403,13 @@ mod store {
         Ok(StoreContext::GetDefault()?)
     }
 
+    /// A single-threaded apartment for the Store's dialog calls. Returns whether this call
+    /// initialized the thread (and so must `RoUninitialize`).
+    fn enter_sta() -> bool {
+        use windows::Win32::System::WinRT::{RoInitialize, RO_INIT_SINGLETHREADED};
+        unsafe { RoInitialize(RO_INIT_SINGLETHREADED) }.is_ok()
+    }
+
     pub fn newer() -> Result<Option<String>> {
         let updates = context()?.GetAppAndOptionalStorePackageUpdatesAsync()?.join()?;
         let mut newest = None;
@@ -391,6 +418,149 @@ mod store {
             newest = Some(format!("{}.{}.{}", v.Major, v.Minor, v.Build));
         }
         Ok(newest)
+    }
+
+    /// Download and install with a dialog owned by the settings viewport captured
+    /// on the UI thread. Every initialization or request failure opens the Store page.
+    pub fn install_now(owner: Option<isize>) -> Result<()> {
+        // The dialog wants a single-threaded (UI-style) apartment, not the MTA of the
+        // other Store calls; this runs on its own thread, so it is left again at the end.
+        let entered = enter_sta();
+        let result = install_dialog(owner);
+        if entered {
+            unsafe { windows::Win32::System::WinRT::RoUninitialize() };
+        }
+        result
+    }
+
+    /// How long the dialog flow may take before the Store page opens instead.
+    const DIALOG_LIMIT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+    /// A WinRT async call that can signal its end, be canceled and give its result.
+    trait Pending {
+        type Out;
+        fn on_done(&self, f: impl Fn() + Send + 'static) -> Result<()>;
+        fn cancel(&self);
+        fn result(&self) -> Result<Self::Out>;
+    }
+    impl<T: windows::core::RuntimeType + 'static> Pending for windows_future::IAsyncOperation<T> {
+        type Out = T;
+        fn on_done(&self, f: impl Fn() + Send + 'static) -> Result<()> {
+            Ok(self.SetCompleted(&windows_future::AsyncOperationCompletedHandler::new(move |_, _| { f(); Ok(()) }))?)
+        }
+        fn cancel(&self) { let _ = self.Cancel(); }
+        fn result(&self) -> Result<T> {
+            let status = self.Status()?;
+            if status != windows_future::AsyncStatus::Completed {
+                bail!("the Store request ended as {status:?}");
+            }
+            Ok(self.GetResults()?)
+        }
+    }
+    impl<T: windows::core::RuntimeType + 'static, P: windows::core::RuntimeType + 'static> Pending
+        for windows_future::IAsyncOperationWithProgress<T, P>
+    {
+        type Out = T;
+        fn on_done(&self, f: impl Fn() + Send + 'static) -> Result<()> {
+            Ok(self.SetCompleted(&windows_future::AsyncOperationWithProgressCompletedHandler::new(move |_, _| { f(); Ok(()) }))?)
+        }
+        fn cancel(&self) { let _ = self.Cancel(); }
+        fn result(&self) -> Result<T> {
+            let status = self.Status()?;
+            if status != windows_future::AsyncStatus::Completed {
+                bail!("the Store request ended as {status:?}");
+            }
+            Ok(self.GetResults()?)
+        }
+    }
+
+    /// Waits for `op` on an STA thread without blocking its message queue (a plain `join()`
+    /// would deadlock when the Store's dialog needs this thread to dispatch messages).
+    fn wait_pumping<P: Pending>(op: P, limit: std::time::Duration) -> Result<P::Out> {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, WAIT_OBJECT_0},
+            System::Threading::{CreateEventW, SetEvent},
+            UI::WindowsAndMessaging::{
+                DispatchMessageW, MsgWaitForMultipleObjectsEx, PeekMessageW, TranslateMessage, MSG, MWMO_INPUTAVAILABLE,
+                PM_REMOVE, QS_ALLINPUT,
+            },
+        };
+        let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+        if event.is_null() {
+            bail!("cannot create a wait event");
+        }
+        // Raw handles are not Send; the event outlives the handler call because we wait
+        // for it (or cancel and stop using it) before closing.
+        let raw = event as usize;
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = done.clone();
+        let set = op.on_done(move || {
+            flag.store(true, std::sync::atomic::Ordering::Release);
+            unsafe { SetEvent(raw as *mut std::ffi::c_void) };
+        });
+        let finish = |event| unsafe { CloseHandle(event) };
+        if let Err(e) = set {
+            finish(event);
+            return Err(e.into());
+        }
+        let deadline = std::time::Instant::now() + limit;
+        let timed_out = loop {
+            if done.load(std::sync::atomic::Ordering::Acquire) {
+                break false;
+            }
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                break true;
+            }
+            let r = unsafe {
+                MsgWaitForMultipleObjectsEx(1, &event, left.as_millis().min(u32::MAX as u128 - 1) as u32, QS_ALLINPUT, MWMO_INPUTAVAILABLE)
+            };
+            if r == WAIT_OBJECT_0 {
+                continue;
+            }
+            if r == WAIT_OBJECT_0 + 1 {
+                let mut msg: MSG = unsafe { std::mem::zeroed() };
+                while unsafe { PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) } != 0 {
+                    unsafe {
+                        TranslateMessage(&msg);
+                        DispatchMessageW(&msg);
+                    }
+                }
+            } else if r != 0x102 {
+                // WAIT_FAILED or abandoned: stop rather than spin.
+                break true;
+            }
+        };
+        if timed_out {
+            op.cancel();
+            // The handler may still run later; leak the event rather than signal a closed handle.
+            bail!("the Store did not answer in time");
+        }
+        finish(event);
+        op.result()
+    }
+
+    fn install_dialog(owner: Option<isize>) -> Result<()> {
+        use windows::core::Interface;
+        flockswitch::store_dialog::run(owner, |hwnd| {
+            let ctx = StoreContext::GetDefault()?;
+            let init = ctx.cast::<windows::Win32::UI::Shell::IInitializeWithWindow>()?;
+            unsafe { init.Initialize(windows::Win32::Foundation::HWND(hwnd as *mut std::ffi::c_void))?; }
+            Ok(ctx)
+        }, |ctx| {
+            // This thread owns the dialog's windows: wait while pumping its messages.
+            let updates = wait_pumping(ctx.GetAppAndOptionalStorePackageUpdatesAsync()?, DIALOG_LIMIT)?;
+            if updates.Size()? == 0 {
+                bail!("the Store offers no update");
+            }
+            // Installing closes flockswitch; Windows starts it again.
+            let result = wait_pumping(ctx.RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)?, DIALOG_LIMIT)?;
+            match result.OverallState()? {
+                StorePackageUpdateState::Completed => Ok(()),
+                StorePackageUpdateState::Canceled => Err(flockswitch::store_dialog::Canceled.into()),
+                state => bail!("the Store update ended as {state:?}"),
+            }
+        }, || super::open_url(super::STORE_PAGE))
     }
 
     pub fn install() -> Result<()> {

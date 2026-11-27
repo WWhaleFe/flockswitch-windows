@@ -17,19 +17,19 @@ mod icon;
 mod net;
 mod overlay;
 mod overlay_render;
+mod settings_logic;
 mod settings_ui;
 mod shared;
 mod store;
 mod tray;
 mod update;
-mod window_size;
+mod wake;
 
 use anyhow::{bail, Result};
 use config::Config;
 use engine::Engine;
 use shared::Shared;
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 const USAGE: &str = "\
@@ -126,10 +126,16 @@ fn main() {
     } else {
         None
     };
-    Config::migrate_old_name();
+    // Screenshot mode (FLOCKSWITCH_SHOTS) never touches the real settings folder.
+    let shots = args.first().map(String::as_str) == Some("settings") && settings_ui::shots_dir().is_some();
+    if !shots {
+        Config::migrate_old_name();
+    }
     // The settings window has no console when started from the menu: log to its own
     // file so a window that fails to open (graphics drivers) leaves a trace.
-    let log_file = if tray_mode {
+    let log_file = if shots {
+        None
+    } else if tray_mode {
         Some(log_path())
     } else if args.first().map(String::as_str) == Some("settings") {
         Some(log_path().with_file_name("settings.log"))
@@ -166,8 +172,9 @@ fn real_main(args: &[String]) -> Result<()> {
         "run" => run_headless(),
         "settings" => {
             // One settings window at a time. Opening it again knocks on the open
-            // window's port (nothing is sent), which brings that window to the front.
-            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], INSTANCE_PORT + 1));
+            // window's port (one byte only for `update`), which brings that window to the front.
+            let port = if settings_ui::shots_dir().is_some() { 0 } else { INSTANCE_PORT + 1 };
+            let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
             let fallback = std::env::var(settings_ui::RENDERER_ENV).is_ok();
             // A fallback relaunch waits for the failed window's process to let go.
             let tries = if fallback { 30 } else { 1 };
@@ -180,8 +187,13 @@ fn real_main(args: &[String]) -> Result<()> {
             });
             let Some(lock) = lock else {
                 let reason = bind_error.map(|e| format!("{e} ({:?})", e.kind())).unwrap_or_default();
-                if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)).is_ok() {
+                if let Ok(mut knock) = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(1)) {
                     log::info!("settings window already open ({addr}: {reason}); bringing it to the front");
+                    // `settings update` also asks the open window for the General page.
+                    if args.get(1).map(String::as_str) == Some("update") {
+                        use std::io::Write;
+                        let _ = knock.write_all(&[settings_ui::KNOCK_GENERAL]);
+                    }
                     return Ok(());
                 }
                 // Nobody answers: the port is reserved (Hyper-V, WSL and Docker reserve
@@ -190,7 +202,9 @@ fn real_main(args: &[String]) -> Result<()> {
                 report_settings_failure(&e);
                 return Err(e);
             };
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| settings_ui::run(lock)))
+            // `settings update` opens on the General tab, where the new version is.
+            let update = args.get(1).map(String::as_str) == Some("update");
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| settings_ui::run(lock, update)))
                 .unwrap_or_else(|_| Err(anyhow::anyhow!("the settings window crashed")));
             match result {
                 // If Direct3D could not start, try once more with OpenGL.
@@ -261,11 +275,11 @@ fn run_headless() -> Result<()> {
     }
     let shared = Arc::new(Shared::new(cfg));
     let s = shared.clone();
-    ctrlc::set_handler(move || s.stop.store(true, Ordering::SeqCst))?;
+    ctrlc::set_handler(move || s.request_stop())?;
     edge::spawn(shared.clone());
     let network = net::spawn(shared.clone());
     let result = Engine::new(shared.clone()).and_then(|mut engine| engine.run());
-    shared.stop.store(true, Ordering::SeqCst);
+    shared.request_stop();
     let _ = network.join();
     result
 }

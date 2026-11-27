@@ -1,0 +1,28 @@
+name: Screenshots
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [shots]
+
+permissions:
+  contents: read
+
+jobs:
+  shots:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked
+      - name: Take the screenshots
+        shell: bash
+        run: |
+          for lang in ko en; do
+            FLOCKSWITCH_SHOTS="$PWD/shots/$lang" FLOCKSWITCH_LANG=$lang ./target/release/flockswitch.exe settings
+          done
+          ls -l shots/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shots-windows
+          path: shots
