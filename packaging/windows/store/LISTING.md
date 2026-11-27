@@ -3,7 +3,7 @@
 Partner Center에 그대로 붙여 넣는 문구와 스크린샷 순서입니다. 2.0.0 목록을 2.1.0 기준으로 업데이트했습니다.
 
 - **핵심 변화:** 1.x는 "Logitech 장치를 버튼 하나로 함께 전환"이 전부였습니다. 2.0부터는 **로컬 네트워크로 마우스·키보드·클립보드 공유**가 첫째 기능이고, Logitech 전환은 둘째 기능입니다. 2.1은 사이드바 설정 창(크기 고정), 연결과 배치 페이지의 역할 선택과 5×3 배치 지도(서브끼리 직접 넘기기), 서브끼리 클립보드 공유, 키보드 페이지의 운영체제 쌍별 'OS 전환 시' 규칙, 연결 다시 찾기와 절전·잠금 해제 뒤 자동 재연결, 컴퓨터별 입력 보내기 스위치, Store를 통한 지금 업데이트, 대기 중 CPU·메모리 절감을 더했습니다.
-- **스크린샷:** `store-shots/ko/1~6.png`, `store-shots/en/1~6.png` (1920×1080, 2.1의 새 사이드바 설정 창에서 다시 촬영 예정).
+- **스크린샷:** `store-shots/ko/1~6.png`, `store-shots/en/1~6.png` (1920×1080, 2.1.0 새 사이드바 설정 창, GitHub Windows 러너에서 촬영).
 - **글자 수 한도:** 설명 10,000자, 이번 버전의 새로운 기능 1,500자, 제품 기능 20개×200자, 짧은 설명 1,000자(게임 외에는 표시되지 않는 곳이 많아 짧게), 검색어 7개.
 
 ## 1. 한국어 (ko-KR)
@@ -246,22 +246,23 @@ Mac Windows
 
 ## 3. 스크린샷과 캡션
 
-`store-shots/ko/`는 한국어 목록에, `store-shots/en/`은 영어 목록에 올립니다. 순서대로 올리고 캡션을 넣습니다. 2.1 스크린샷은 새 사이드바 설정 창에서 다시 촬영할 예정입니다.
+`store-shots/ko/`는 한국어 목록에, `store-shots/en/`은 영어 목록에 올립니다. 순서대로 올리고 캡션을 넣습니다.
 
 | # | 화면 | 캡션(ko-KR) | Caption (en-US) |
 |---|---|---|---|
-| 1 | 네트워크 탭: 짝 맺은 Mac·노트북과 화면 배치 | 로컬 네트워크로 마우스·키보드·클립보드 공유 | Share mouse, keyboard and clipboard over your network |
-| 2 | 전환 탭: 버튼별 이동할 채널 | 마우스 버튼 하나로 Logitech 장치를 함께 전환 | Move Logitech devices together with one button |
-| 3 | 장치 탭: 마스터 마우스와 함께 이동할 장치 | 키보드와 다른 장치도 함께 이동 | Your keyboard and other devices move along |
-| 4 | 효과 탭: 대기·도착 효과 | 넘어가기 전 카운트다운과 도착 표시 | Countdown before crossing, a marker on arrival |
-| 5 | 일반 탭: 진동·마우스 찾기·업데이트·백업 | 진동, 마우스 찾기, 설정 백업 | Haptics, find the cursor, settings backup |
+| 1 | 연결과 배치: 5×3 배치도에 놓은 컴퓨터 4대 | 내 컴퓨터를 책상처럼 놓고 마우스·키보드 공유 | Place your computers like your desk and share one mouse and keyboard |
+| 2 | 넘기기: 모서리와 넘어가는 조건 | 화면 모서리로 다른 컴퓨터에 넘어가기 | Cross to another computer at the screen edge |
+| 3 | 키보드: OS 전환 시 규칙 (macOS → Windows) | 운영체제가 달라도 단축키와 한/영 키가 그대로 | Shortcuts and the Korean/English key keep working across systems |
+| 4 | 클립보드: 서브끼리 공유와 받은 파일 | 서브끼리도 글·이미지·파일 클립보드 공유 | Clipboard text, images and files, even between subs |
+| 5 | 로지텍 버튼 전환 | 마우스 버튼 하나로 Logitech 장치를 함께 전환 | Move Logitech devices together with one button |
+| 6 | 일반: 업데이트·백업 | Microsoft Store로 바로 업데이트, 설정 백업 | Update through the Microsoft Store, back up settings |
 
 ## 4. 적용 순서
 
 1. Partner Center → 앱 **Flockswitch** → 2.1.0 패키지가 든 제출이 게시됐는지 확인합니다. 아직 인증 중이면 끝난 뒤에 합니다.
 2. **Start update**(업데이트 시작)로 새 제출을 만듭니다. 패키지는 그대로 둡니다(목록만 바꾸는 제출도 인증을 거칩니다).
-3. Store listings → **한국어**: 1-1~1-4를 붙여 넣고, 기존 스크린샷을 모두 지운 뒤 `store-shots/ko/1~5.png`를 순서대로 올리고 3장의 캡션을 넣습니다.
-4. Store listings → **English**: 2-1~2-4와 `store-shots/en/1~5.png`를 같은 방식으로 넣습니다.
+3. Store listings → **한국어**: 1-1~1-4를 붙여 넣고, 기존 스크린샷을 모두 지운 뒤 `store-shots/ko/1~6.png`를 순서대로 올리고 3장의 캡션을 넣습니다.
+4. Store listings → **English**: 2-1~2-4와 `store-shots/en/1~6.png`를 같은 방식으로 넣습니다.
 5. 검색어(1-5 / 2-5)는 Partner Center를 영어(/en-us/)로 열어 넣습니다. 칩 입력란 바깥을 클릭한 뒤 저장하고, "Additional information"을 펼쳐 칩이 남아 있는지 확인합니다.
 6. 저장 → **Submit for certification**.
 7. 게시되면 https://apps.microsoft.com/detail/9NN9ZLHLGSKN 에서 설명과 스크린샷을 확인합니다.
