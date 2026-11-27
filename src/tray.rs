@@ -108,6 +108,8 @@ pub fn run(shared: Arc<Shared>) -> Result<()> {
         let destroyed = matches!(event, Event::LoopDestroyed);
         if shared.stopped() || destroyed {
             shared.request_stop();
+            // An open settings window has nothing left to talk to: close it.
+            crate::settings_ui::tell_settings_to_quit();
             if let Some(h) = network.take() {
                 let _ = h.join();
             }

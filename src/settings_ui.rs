@@ -122,6 +122,62 @@ fn window_builder(title: &str, icon: egui::IconData) -> egui::ViewportBuilder {
 const RAISE: u8 = 1;
 const RAISE_GENERAL: u8 = 2;
 pub const KNOCK_GENERAL: u8 = b'u';
+/// The byte the background app sends to the open settings window when it quits.
+pub const KNOCK_QUIT: u8 = b'q';
+
+/// Set when the background app is gone (or said it quits): the window closes.
+static CLOSE_NOW: AtomicBool = AtomicBool::new(false);
+
+/// What a knock on the settings port asks for.
+#[derive(Debug, PartialEq)]
+enum Knock {
+    Raise,
+    General,
+    Quit,
+}
+
+/// The meaning of the one byte of a knock (`None`: nothing was sent).
+fn parse_knock(byte: Option<u8>) -> Knock {
+    match byte {
+        Some(KNOCK_GENERAL) => Knock::General,
+        Some(KNOCK_QUIT) => Knock::Quit,
+        _ => Knock::Raise,
+    }
+}
+
+/// Tells an open settings window that the background app quits, so it closes too.
+pub fn tell_settings_to_quit() {
+    use std::io::Write;
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], crate::INSTANCE_PORT + 1));
+    if let Ok(mut stream) = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
+        let _ = stream.write_all(&[KNOCK_QUIT]);
+    }
+}
+
+/// Follows whether the background app is running. A window opened on its own (no
+/// background app ever seen) stays; once the app was seen and is gone for two polls in
+/// a row, the window should close.
+#[derive(Default)]
+struct BackgroundWatch {
+    seen: bool,
+    missing: u8,
+}
+
+impl BackgroundWatch {
+    /// One poll; true when the window should close.
+    fn poll(&mut self, running: bool) -> bool {
+        if running {
+            self.seen = true;
+            self.missing = 0;
+            return false;
+        }
+        if !self.seen {
+            return false;
+        }
+        self.missing = self.missing.saturating_add(1);
+        self.missing >= 2
+    }
+}
 
 /// The screenshot output folder (FLOCKSWITCH_SHOTS), when that mode is on.
 pub fn shots_dir() -> Option<&'static std::path::PathBuf> {
@@ -158,17 +214,33 @@ pub fn run(lock: std::net::TcpListener, show_update: bool) -> Result<()> {
             install_style(&cc.egui_ctx);
             let raise = Arc::new(AtomicU8::new(0));
             let (ctx, flag) = (cc.egui_ctx.clone(), raise.clone());
+            let watch_ctx = ctx.clone();
             std::thread::spawn(move || {
                 for stream in lock.incoming() {
-                    // A second process started for the "new version" item sends one byte.
+                    // A second process started for the "new version" item sends one byte,
+                    // and the background app sends one when it quits.
                     let mut byte = [0u8; 1];
-                    let general = stream.is_ok_and(|mut s| {
+                    let sent = stream.ok().and_then(|mut s| {
                         use std::io::Read;
                         let _ = s.set_read_timeout(Some(Duration::from_millis(300)));
-                        s.read(&mut byte).is_ok_and(|n| n == 1 && byte[0] == KNOCK_GENERAL)
+                        s.read(&mut byte).ok().filter(|&n| n == 1).map(|_| byte[0])
                     });
-                    flag.store(if general { RAISE_GENERAL } else { RAISE }, Ordering::Relaxed);
+                    match parse_knock(sent) {
+                        Knock::Quit => CLOSE_NOW.store(true, Ordering::SeqCst),
+                        Knock::General => flag.store(RAISE_GENERAL, Ordering::Relaxed),
+                        Knock::Raise => flag.store(RAISE, Ordering::Relaxed),
+                    }
                     ctx.request_repaint();
+                }
+            });
+            std::thread::spawn(move || {
+                let mut watch = BackgroundWatch::default();
+                loop {
+                    std::thread::sleep(Duration::from_secs(1));
+                    if watch.poll(crate::main_instance_running()) {
+                        CLOSE_NOW.store(true, Ordering::SeqCst);
+                        watch_ctx.request_repaint();
+                    }
                 }
             });
             Ok(Box::new(SettingsApp::new(&cc.egui_ctx, raise, shown, show_update)))
@@ -913,6 +985,10 @@ impl SettingsApp {
             let panel = egui::Frame::new().inner_margin(Margin::symmetric(18, 12));
             egui::CentralPanel::default().frame(panel).show(ui, |ui| self.uninstall_result(ui, t, p));
             return;
+        }
+        // The background app quit: close, unless an uninstall is showing its result.
+        if CLOSE_NOW.load(Ordering::SeqCst) && !matches!(self.uninstall, Uninstall::Waiting(_) | Uninstall::Done) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         if self.last_refresh.elapsed() >= REFRESH {
             self.refresh();
@@ -3492,6 +3568,29 @@ impl SettingsApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn knock_bytes() {
+        assert_eq!(parse_knock(Some(b'q')), Knock::Quit);
+        assert_eq!(parse_knock(Some(b'u')), Knock::General);
+        assert_eq!(parse_knock(Some(b'x')), Knock::Raise);
+        assert_eq!(parse_knock(None), Knock::Raise);
+    }
+
+    #[test]
+    fn background_watch_closes_only_after_the_app_was_seen() {
+        let mut alone = BackgroundWatch::default();
+        assert!(!alone.poll(false) && !alone.poll(false) && !alone.poll(false));
+        let mut w = BackgroundWatch::default();
+        assert!(!w.poll(true));
+        assert!(!w.poll(false));
+        assert!(w.poll(false));
+        let mut blip = BackgroundWatch::default();
+        blip.poll(true);
+        assert!(!blip.poll(false));
+        assert!(!blip.poll(true));
+        assert!(!blip.poll(false));
+    }
 
     #[test]
     fn the_window_has_one_fixed_size() {
