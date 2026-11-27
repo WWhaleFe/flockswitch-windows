@@ -232,8 +232,8 @@ mod tests {
         assert!(move_to(&cells, &known, "me", 0, 2, 0).is_some());
         // Taken cell, outside the grid, unknown computer: refused.
         assert!(move_to(&cells, &known, "a", 0, 2, 1).is_none());
-        assert!(move_to(&cells, &known, "a", 0, 5, 0).is_none());
-        assert!(move_to(&cells, &known, "a", 0, 0, 3).is_none());
+        assert!(move_to(&cells, &known, "a", 0, COLS, 0).is_none());
+        assert!(move_to(&cells, &known, "a", 0, 0, ROWS).is_none());
         assert!(move_to(&cells, &known, "ghost", 0, 0, 0).is_none());
     }
 
