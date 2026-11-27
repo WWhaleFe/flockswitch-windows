@@ -2,7 +2,7 @@
 
 Partner Center에 그대로 붙여 넣는 문구와 스크린샷 순서입니다. 2.0.0 목록을 2.1.0 기준으로 업데이트했습니다.
 
-- **핵심 변화:** 1.x는 "Logitech 장치를 버튼 하나로 함께 전환"이 전부였습니다. 2.0부터는 **로컬 네트워크로 마우스·키보드·클립보드 공유**가 첫째 기능이고, Logitech 전환은 둘째 기능입니다. 2.1은 사이드바 설정 창(크기 고정), 연결과 배치 페이지의 역할 선택과 5×3 배치 지도(서브끼리 직접 넘기기), 서브끼리 클립보드 공유, 키보드 페이지의 운영체제 쌍별 'OS 전환 시' 규칙, 연결 다시 찾기와 절전·잠금 해제 뒤 자동 재연결, 컴퓨터별 입력 보내기 스위치, Store를 통한 지금 업데이트, 대기 중 CPU·메모리 절감을 더했습니다.
+- **핵심 변화:** 1.x는 "Logitech 장치를 버튼 하나로 함께 전환"이 전부였습니다. 2.0부터는 **로컬 네트워크로 마우스·키보드·클립보드 공유**가 첫째 기능이고, Logitech 전환은 둘째 기능입니다. 2.1은 사이드바 설정 창(크기 고정), 연결과 배치 페이지의 역할 선택과 6×4 배치 지도(서브끼리 직접 넘기기), 서브끼리 클립보드 공유, 키보드 페이지의 운영체제 쌍별 'OS 전환 시' 규칙, 연결 다시 찾기와 절전·잠금 해제 뒤 자동 재연결, 컴퓨터별 입력 보내기 스위치, Store를 통한 지금 업데이트, 대기 중 CPU·메모리 절감을 더했습니다.
 - **스크린샷:** `store-shots/ko/1~6.png`, `store-shots/en/1~6.png` (1920×1080, 2.1.0 새 사이드바 설정 창, GitHub Windows 러너에서 촬영).
 - **글자 수 한도:** 설명 10,000자, 이번 버전의 새로운 기능 1,500자, 제품 기능 20개×200자, 짧은 설명 1,000자(게임 외에는 표시되지 않는 곳이 많아 짧게), 검색어 7개.
 
@@ -20,7 +20,7 @@ flockswitch는 책상 위 여러 컴퓨터를 마우스·키보드 한 벌로 �
 • 근처 컴퓨터를 자동으로 찾아 줍니다(mDNS). 찾지 못하면 IP 주소로 추가합니다. 연결 다시 찾기 버튼으로 바로 다시 연결할 수 있고, 절전 모드에서 깨어나거나 잠금을 풀면 자동으로 다시 연결합니다.
 • 짝 맺기: 두 컴퓨터에 같은 숫자가 보이는지 확인하고 양쪽에서 확인을 누릅니다. 짝을 맺은 컴퓨터끼리만 연결합니다.
 • 모든 통신은 TLS 1.3으로 암호화합니다.
-• 5×3 배치 지도: 마스터와 서브를 5×3 칸에 놓아 실제 책상 위 위치대로 배치합니다. 나란히 놓은 서브끼리도 서로 바로 넘어갑니다.
+• 6×4 배치 지도: 마스터와 서브를 6×4 칸에 놓아 실제 책상 위 위치대로 배치합니다. 나란히 놓은 서브끼리도 서로 바로 넘어갑니다.
 • 짝 맺은 컴퓨터마다 '이 컴퓨터의 마우스·키보드로 다른 컴퓨터 쓰기' 스위치를 켜거나 끌 수 있습니다(마스터에서 설정).
 • 클립보드 공유: 글·이미지·파일을 복사한 채 넘어가면 커서를 따라 함께 갑니다. 서브끼리도 마스터를 거쳐 클립보드를 주고받습니다. 받은 파일은 다운로드\flockswitch 폴더에 저장되고 바로 붙여넣을 수 있습니다(파일·이미지는 100MB까지).
 • 넘김 대기 시간: 가장자리에서 잠시 머물러야 넘어가게 하고, 그동안 카운트다운 효과를 보여 줍니다. 없음으로 두면 바로 넘어갑니다.
@@ -83,7 +83,7 @@ flockswitch는 Logitech과 관계없는 개인 오픈소스 프로젝트입니�
 ```
 2.1.0
 • 새 설정 창: 탭 대신 왼쪽 사이드바(네트워크: 연결과 배치·넘기기·키보드·클립보드·이 컴퓨터, 로지텍: 버튼·단축키·모서리 전환·장치, 앱: 효과·일반)가 있는 크기 고정 창으로 바뀌었습니다.
-• 연결과 배치: 이 페이지에서 역할(마스터·서브)을 고르고, 5×3 배치 지도에 컴퓨터를 놓습니다. 나란히 놓은 서브끼리 서로 바로 넘어갑니다.
+• 연결과 배치: 이 페이지에서 역할(마스터·서브)을 고르고, 6×4 배치 지도에 컴퓨터를 놓습니다. 나란히 놓은 서브끼리 서로 바로 넘어갑니다.
 • 컴퓨터마다 '이 컴퓨터의 마우스·키보드로 다른 컴퓨터 쓰기' 스위치를 두었습니다(마스터에서 설정).
 • 연결 다시 찾기 버튼과, 절전 모드에서 깨어나거나 잠금을 풀면 자동으로 다시 연결하는 기능을 더했습니다.
 • 서브끼리 클립보드 공유: 마스터를 거쳐 서브 사이에서도 글·이미지·파일 클립보드를 주고받습니다. 클립보드 페이지에서 보낼 항목, 받은 폴더와 최근 파일, 전송 상태를 확인합니다.
@@ -96,7 +96,7 @@ flockswitch는 Logitech과 관계없는 개인 오픈소스 프로젝트입니�
 
 ```
 로컬 네트워크로 마우스·키보드 공유(브랜드 무관)
-5×3 배치 지도와 서브끼리 직접 화면 넘기기
+6×4 배치 지도와 서브끼리 직접 화면 넘기기
 Windows PC와 Mac 사이 클립보드 공유(글·이미지·파일, 서브끼리 공유)
 마스터 한 대에 서브 최대 3대, 컴퓨터별 입력 보내기 스위치
 숫자 확인 짝 맺기와 TLS 1.3 암호화
@@ -139,7 +139,7 @@ Share your mouse, keyboard and clipboard between your Windows PCs and Macs on th
 • Finds nearby computers automatically (mDNS), or add one by IP address. Use Find connections again to reconnect at once, with automatic reconnecting after sleep or unlock.
 • Pairing: check that both computers show the same number and confirm on both. Only paired computers connect.
 • All traffic is encrypted with TLS 1.3.
-• 5x3 layout map: place the master and subs on a 5x3 grid to match your desk. Subs placed next to each other cross directly from sub to sub.
+• 6x4 layout map: place the master and subs on a 6x4 grid to match your desk. Subs placed next to each other cross directly from sub to sub.
 • Per-computer switch to allow or block using other computers with that computer's mouse and keyboard (set on the master).
 • Clipboard sharing: copy text, an image or files, cross over, and it goes along with the cursor. Subs also share the clipboard with each other through the master. Received files are saved in Downloads\flockswitch, ready to paste (files and images up to 100 MB).
 • Crossing delay: make the cursor rest at the edge for a moment before it crosses, with a countdown effect while it waits, or cross straight away.
@@ -202,7 +202,7 @@ Share your mouse, keyboard and clipboard between Windows PCs and Macs over your 
 ```
 2.1.0
 • New settings window: fixed-size window with a sidebar (Network: Connection and layout, Crossing, Keyboard, Clipboard, This computer; Logitech: Button, Shortcut, Edge switching, Devices; App: Effects, General) instead of tabs.
-• Connection and layout: choose this computer's role (master or sub) and place computers on a 5x3 layout map. Subs placed side by side cross directly to each other.
+• Connection and layout: choose this computer's role (master or sub) and place computers on a 6x4 layout map. Subs placed side by side cross directly to each other.
 • Per-computer switch to use other computers with this computer's mouse and keyboard (set on the master).
 • Find connections again button, plus automatic reconnecting after waking from sleep or unlocking the session.
 • Sub-to-sub clipboard sharing: share text, images and files between subs through the master, with controls for what is sent, the received folder, recent file and transfer status on the Clipboard page.
@@ -215,7 +215,7 @@ Share your mouse, keyboard and clipboard between Windows PCs and Macs over your 
 
 ```
 Share mouse and keyboard over your local network (any brand)
-5x3 layout map with direct sub-to-sub screen crossing
+6x4 layout map with direct sub-to-sub screen crossing
 Clipboard sharing between Windows and Mac (text, images, files, sub-to-sub)
 One master with up to three subs and a per-computer input switch
 Number-check pairing and TLS 1.3 encryption
@@ -250,7 +250,7 @@ Mac Windows
 
 | # | 화면 | 캡션(ko-KR) | Caption (en-US) |
 |---|---|---|---|
-| 1 | 연결과 배치: 5×3 배치도에 놓은 컴퓨터 4대 | 내 컴퓨터를 책상처럼 놓고 마우스·키보드 공유 | Place your computers like your desk and share one mouse and keyboard |
+| 1 | 연결과 배치: 6×4 배치도에 놓은 컴퓨터 4대 | 내 컴퓨터를 책상처럼 놓고 마우스·키보드 공유 | Place your computers like your desk and share one mouse and keyboard |
 | 2 | 넘기기: 모서리와 넘어가는 조건 | 화면 모서리로 다른 컴퓨터에 넘어가기 | Cross to another computer at the screen edge |
 | 3 | 키보드: OS 전환 시 규칙 (macOS → Windows) | 운영체제가 달라도 단축키와 한/영 키가 그대로 | Shortcuts and the Korean/English key keep working across systems |
 | 4 | 클립보드: 서브끼리 공유와 받은 파일 | 서브끼리도 글·이미지·파일 클립보드 공유 | Clipboard text, images and files, even between subs |
