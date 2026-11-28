@@ -343,7 +343,7 @@ mod tests {
             discovered: vec![],
             peers: vec![PeerStatus { id: "m".into(), name: "M".into(), os: None, connected, rtt_ms: None, can_send: true, via_master: false, keyrules, displays: vec![], paused: false }],
             state: StateStatus { mode: "local".into(), peer: None },
-            pairing: None, transfer: None, following: None, layout: vec![], reconnecting: false, keys: Default::default(),
+            pairing: None, transfer: None, following: None, layout: vec![], reconnecting: false, keys: Default::default(), key_check: None,
         };
         assert!(!undeliverable(&config, Some(&status(true, true))));
         assert!(!undeliverable(&config, Some(&status(false, false))));

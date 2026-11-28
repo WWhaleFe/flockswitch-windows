@@ -349,6 +349,18 @@ pub fn open_settings_window() {
 }
 
 /// The same, with an extra argument (`update` opens on the page with the new version).
+/// The key check window (opened by the network service on a master).
+pub fn open_key_check_window() {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            if let Err(e) = std::process::Command::new(exe).arg("keycheck").spawn() {
+                log::warn!("cannot open the key check window: {e}");
+            }
+        }
+        Err(e) => log::warn!("cannot open the key check window: {e}"),
+    }
+}
+
 fn open_settings_window_with(extra: &str) {
     match std::env::current_exe() {
         Ok(exe) => {

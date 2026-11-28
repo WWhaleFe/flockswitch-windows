@@ -309,6 +309,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                             persist_key_rules: Box::new(move |keys| {
                                 edited.update_config(|c| c.network.keys = keys.clone())
                             }),
+                            open_key_check: Box::new(crate::tray::open_key_check_window),
                             ..flock_net::Hooks::default()
                         };
                         match Service::start(config.clone(), input.clone(), hooks) {
@@ -342,7 +343,7 @@ pub fn spawn(shared: Arc<Shared>) -> JoinHandle<()> {
                                     following: None,
                                     layout: vec![],
                                     reconnecting: false,
-                                    keys: Default::default(),
+                                    keys: Default::default(), key_check: None,
                                 };
                                 let _ = flock_net::write_status(config_dir(), &status);
                             }
@@ -999,7 +1000,7 @@ mod tests {
             following: None,
             layout: vec![],
             reconnecting: false,
-            keys: Default::default(),
+            keys: Default::default(), key_check: None,
         };
         assert_eq!(NetState::of(&config, None), NetState::Off);
         assert_eq!(NetState::of(&config, Some(&status("local", None))), NetState::Idle);
