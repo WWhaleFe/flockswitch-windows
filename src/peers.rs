@@ -35,7 +35,7 @@ mod tests {
             following: None,
             layout: vec![],
             reconnecting: false,
-            keys: Default::default(),
+            keys: Default::default(), key_check: None,
         };
         assert_eq!(peer_name(&net, Some(&status), "p1").as_deref(), Some("Renamed"));
         assert_eq!(peer_name(&net, Some(&status), "p2").as_deref(), Some("Desk"));
