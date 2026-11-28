@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5.1 - 2026-11-28
+
+- Fix: the key mapping check box on the Keyboard page made the page wider than the window, cutting off text on the right.
+
 ## 2.5.0 - 2026-11-28
 
 - Keyboard: a **Check key mapping** button on the Keyboard page. Pressed on any computer, it opens the **Key mapping check** window on the master, which shows what each other computer gets for the keys you press, in that computer's own names (Windows Ctrl+C is Command+C on a Mac, Mac Command is Ctrl on Linux). The master's keys show as they go to the computer the pointer is on (marked as receiving now), or test them with **Test this computer's keyboard** in the window. On a sub the button tests that sub's keyboard, showing what the master and the other subs get for its keys. While a keyboard is tested its keys and pointer do nothing on that computer; Esc, 30 seconds without a key or closing the window ends it. The master and the sub both need this version.
